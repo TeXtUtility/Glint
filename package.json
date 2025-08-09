@@ -1,0 +1,170 @@
+{
+  "name": "glint",
+  "version": "0.18.0",
+  "license": "SEE LICENSE IN LICENSE",
+  "description": "Desktop AI overlay for meetings",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import ./src/test/setup.ts --experimental-test-module-mocks --test --test-timeout=30000 \"src/**/*.test.mts\"",
+    "package": "electron-vite build && electron-builder --mac --dir",
+    "package:win": "electron-vite build && electron-builder --win --dir"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.128.0",
+    "@huggingface/transformers": "^4.3.0",
+    "audiotee": "^0.0.7",
+    "ical.js": "^2.2.1",
+    "koffi": "^3.3.1",
+    "onnxruntime-node": "1.30.0",
+    "openai": "^7.23.0",
+    "sherpa-onnx-node": "1.13.8",
+    "unpdf": "^1.8.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^5.2.0",
+    "electron": "^44.7.2",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "katex": "^0.19.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "react-markdown": "^10.1.0",
+    "rehype-highlight": "^7.0.2",
+    "rehype-katex": "^7.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-math": "^6.0.0",
+    "typescript": "^7.0.2",
+    "vite": "^7.3.6"
+  },
+  "allowScripts": {
+    "esbuild@0.25.12": true,
+    "esbuild@0.28.2": true,
+    "koffi@3.3.1": true,
+    "onnxruntime-node": false,
+    "protobufjs": false,
+    "fsevents": false,
+    "electron-winstaller": false
+  },
+  "productName": "Glint",
+  "private": true,
+  "engines": {
+    "node": ">=22.18"
+  },
+  "build": {
+    "appId": "io.github.textutility.glint",
+    "artifactName": "Glint-${arch}.${ext}",
+    "dmg": {
+      "background": "build/dmg-background.tiff",
+      "window": {
+        "width": 600,
+        "height": 388
+      },
+      "iconSize": 96,
+      "contents": [
+        {
+          "x": 150,
+          "y": 130
+        },
+        {
+          "x": 450,
+          "y": 130,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "artifactName": "Glint-Setup.${ext}"
+    },
+    "files": [
+      "out/**/*",
+      "!out/**/*.map",
+      "!node_modules/onnxruntime-web/**",
+      "!node_modules/@huggingface/transformers/dist/transformers{,.min,.web,.web.min,.node.min}.{js,cjs,mjs}",
+      "!node_modules/@huggingface/transformers/dist/transformers.node.cjs",
+      "!node_modules/{protobufjs,@protobufjs,flatbuffers,long}/**",
+      "!out/renderer/assets/KaTeX_*.{ttf,woff}",
+      "!node_modules/{openai,@anthropic-ai/sdk,@huggingface/transformers}/src/**",
+      "!node_modules/ical.js/dist/*.min.*",
+      "!node_modules/**/*.{map,d.ts,d.mts,d.cts}"
+    ],
+    "electronLanguages": [
+      "en"
+    ],
+    "extraResources": [
+      {
+        "from": "resources",
+        "filter": [
+          "silero_vad.onnx",
+          "pyannote_segmentation_3.*"
+        ]
+      }
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/audiotee/bin/**"
+    ],
+    "npmRebuild": false,
+    "electronFuses": {
+      "runAsNode": false,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "grantFileProtocolExtraPrivileges": false,
+      "onlyLoadAppFromAsar": true,
+      "enableEmbeddedAsarIntegrityValidation": true
+    },
+    "protocols": [
+      {
+        "name": "Glint",
+        "schemes": [
+          "glint"
+        ]
+      }
+    ],
+    "mac": {
+      "files": [
+        "out/**/*",
+        "LICENSE",
+        "!node_modules/onnxruntime-node/bin/napi-v*/{linux,win32}/**",
+        "!node_modules/onnxruntime-node/bin/napi-v*/darwin/*/libonnxruntime.1.*.*.dylib",
+        "!node_modules/unpdf/**"
+      ],
+      "identity": null,
+      "category": "public.app-category.productivity",
+      "minimumSystemVersion": "14.2",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Glint transcribes your side of the conversation during a session.",
+        "NSAudioCaptureUsageDescription": "Glint transcribes the other side of the call from your computer's audio during a session.",
+        "NSAppleEventsUsageDescription": "Glint opens your terminal with commands you chose to run, and asks you before anything runs.",
+        "NSCameraUsageDescription": "Glint doesn't use the camera.",
+        "NSBluetoothAlwaysUsageDescription": "Glint doesn't use Bluetooth.",
+        "NSCalendarsFullAccessUsageDescription": "Glint reads the invite for the meeting you're in when you press Guess, to match speakers to the people on it.",
+        "NSCalendarsUsageDescription": "Glint reads the invite for the meeting you're in when you press Guess, to match speakers to the people on it.",
+        "LSUIElement": true
+      }
+    },
+    "win": {
+      "target": "dir",
+      "icon": "build/icon.png",
+      "files": [
+        "out/**/*",
+        "LICENSE",
+        "!node_modules/onnxruntime-node/bin/napi-v*/{linux,darwin}/**",
+        "!node_modules/onnxruntime-node/bin/napi-v*/win32/arm64/**",
+        "!node_modules/audiotee/bin/**"
+      ]
+    }
+  },
+  "overrides": {
+    "katex": "$katex"
+  }
+}

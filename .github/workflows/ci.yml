@@ -1,0 +1,35 @@
+# The same check the installer runs before it replaces Glint, on every push and pull request.
+name: CI
+
+on:
+  push:
+    branches: [main, beta, windows]
+  pull_request:
+  workflow_dispatch:
+
+# A newer push to the same branch makes an older run pointless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        # Each on its own system's tools (textutil, say and afconvert on a Mac; tar, PowerShell and its OCR on Windows).
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22 # the oldest Node the installer accepts (22.18 or later)
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1' # nothing here runs Electron
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
