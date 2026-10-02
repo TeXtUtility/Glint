@@ -126,6 +126,7 @@ async function downloadSherpa(name: string, into: string, onProgress?: (pct: num
   fs.mkdirSync(into, { recursive: true })
   const archive = path.join(into, `${name}.tar.bz2.part`)
   const unpacked = path.join(into, `${name}.part`) // moved into place once whole, so a half-unpacked model never looks done
+  const out = fs.createWriteStream(archive)
   try {
     const res = await fetch(SHERPA_URL(name), { signal: AbortSignal.timeout(30 * 60_000) })
     if (!res.ok || !res.body) throw new Error(`speech model download failed (HTTP ${res.status})`)
@@ -143,7 +144,7 @@ async function downloadSherpa(name: string, into: string, onProgress?: (pct: num
           yield chunk
         }
       },
-      fs.createWriteStream(archive),
+      out,
     )
     if (hash.digest('hex') !== SHERPA_SHA256[name]) throw new Error('the speech model download was corrupted')
     fs.mkdirSync(unpacked, { recursive: true })
@@ -151,6 +152,9 @@ async function downloadSherpa(name: string, into: string, onProgress?: (pct: num
     fs.rmSync(path.join(into, name), { recursive: true, force: true })
     fs.renameSync(path.join(unpacked, name), path.join(into, name))
   } finally {
+    // A failed download can leave the file still opening; removed only once it's closed, or it would be created after.
+    out.destroy()
+    if (!out.closed) await new Promise<void>((resolve) => out.once('close', resolve))
     fs.rmSync(unpacked, { recursive: true, force: true })
     fs.rmSync(archive, { force: true })
   }
