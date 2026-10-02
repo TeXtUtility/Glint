@@ -1,0 +1,125 @@
+{
+  "name": "glint",
+  "version": "0.15.0",
+  "description": "Desktop AI overlay for meetings",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import ./src/test/setup.ts --test --test-timeout=30000 \"src/**/*.test.mts\"",
+    "package": "electron-vite build && electron-builder --mac --dir"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.128.0",
+    "@huggingface/transformers": "^4.3.0",
+    "audiotee": "^0.0.7",
+    "koffi": "^3.3.1",
+    "onnxruntime-node": "1.30.0",
+    "openai": "^7.23.0",
+    "sherpa-onnx-node": "1.13.8"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^5.2.0",
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "katex": "^0.16.47",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "react-markdown": "^10.1.0",
+    "rehype-highlight": "^7.0.2",
+    "rehype-katex": "^7.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-math": "^6.0.0",
+    "typescript": "^7.0.2",
+    "vite": "^7.3.6"
+  },
+  "allowScripts": {
+    "esbuild@0.25.12": true,
+    "esbuild@0.28.2": true,
+    "koffi@3.3.1": true,
+    "onnxruntime-node": false,
+    "protobufjs": false,
+    "fsevents": false,
+    "electron-winstaller": false
+  },
+  "productName": "Glint",
+  "private": true,
+  "engines": {
+    "node": ">=22.18"
+  },
+  "build": {
+    "appId": "io.github.textutility.glint",
+    "files": [
+      "out/**/*",
+      "!out/**/*.map",
+      "!node_modules/onnxruntime-web/**",
+      "!node_modules/onnxruntime-node/bin/napi-v*/{linux,win32}/**",
+      "!node_modules/onnxruntime-node/bin/napi-v*/darwin/*/libonnxruntime.1.*.*.dylib",
+      "!node_modules/@huggingface/transformers/dist/transformers{,.min,.web,.web.min,.node.min}.{js,cjs,mjs}",
+      "!node_modules/@huggingface/transformers/dist/transformers.node.cjs",
+      "!node_modules/{protobufjs,@protobufjs,flatbuffers,long}/**",
+      "!out/renderer/assets/KaTeX_*.{ttf,woff}",
+      "!node_modules/{openai,@anthropic-ai/sdk,@huggingface/transformers}/src/**",
+      "!node_modules/**/*.{map,d.ts,d.mts,d.cts}"
+    ],
+    "electronLanguages": [
+      "en"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/silero_vad.onnx",
+        "to": "silero_vad.onnx"
+      },
+      {
+        "from": "resources/pyannote_segmentation_3.int8.onnx",
+        "to": "pyannote_segmentation_3.int8.onnx"
+      },
+      {
+        "from": "resources/pyannote_segmentation_3.LICENSE",
+        "to": "pyannote_segmentation_3.LICENSE"
+      }
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/audiotee/bin/**"
+    ],
+    "npmRebuild": false,
+    "electronFuses": {
+      "runAsNode": false,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "grantFileProtocolExtraPrivileges": false,
+      "onlyLoadAppFromAsar": true,
+      "enableEmbeddedAsarIntegrityValidation": true
+    },
+    "protocols": [
+      {
+        "name": "Glint",
+        "schemes": [
+          "glint"
+        ]
+      }
+    ],
+    "mac": {
+      "identity": null,
+      "category": "public.app-category.productivity",
+      "minimumSystemVersion": "14.2",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Glint transcribes your side of the conversation during a session.",
+        "NSAudioCaptureUsageDescription": "Glint transcribes the other side of the call from your computer's audio during a session.",
+        "NSAppleEventsUsageDescription": "Glint opens your terminal with commands you chose to run, and asks you before anything runs.",
+        "NSCameraUsageDescription": "Glint doesn't use the camera.",
+        "NSBluetoothAlwaysUsageDescription": "Glint doesn't use Bluetooth.",
+        "NSCalendarsFullAccessUsageDescription": "Glint reads the invite for the meeting you're in when you press Guess, to match speakers to the people on it.",
+        "NSCalendarsUsageDescription": "Glint reads the invite for the meeting you're in when you press Guess, to match speakers to the people on it.",
+        "LSUIElement": true
+      }
+    }
+  }
+}
