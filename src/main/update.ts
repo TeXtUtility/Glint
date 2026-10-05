@@ -31,10 +31,14 @@ export function initUpdates() {
   // Windows has no SIGUSR2: install.ps1 leaves this file instead, also when it was run by hand.
   if (process.platform === 'win32') {
     const dir = app.getPath('userData')
+    const file = path.join(dir, QUIT_FILE)
     fs.mkdirSync(dir, { recursive: true })
+    fs.rmSync(file, { force: true }) // left by an installer that ran while Glint didn't
     fs.watch(dir, (_e, name) => {
-      if (name !== QUIT_FILE || !fs.existsSync(path.join(dir, QUIT_FILE))) return
-      fs.rmSync(path.join(dir, QUIT_FILE), { force: true })
+      if (name !== QUIT_FILE || !fs.existsSync(file)) return
+      try {
+        fs.rmSync(file, { force: true })
+      } catch {} // still being written: it's the request all the same
       quitRequested = true
       builtAndWaiting()
     })
