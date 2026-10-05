@@ -9,7 +9,8 @@
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit",
     "test": "node --import ./src/test/setup.ts --test --test-timeout=30000 \"src/**/*.test.mts\"",
-    "package": "electron-vite build && electron-builder --mac --dir"
+    "package": "electron-vite build && electron-builder --mac --dir",
+    "package:win": "electron-vite build && electron-builder --win --dir"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",
@@ -60,8 +61,6 @@
       "out/**/*",
       "!out/**/*.map",
       "!node_modules/onnxruntime-web/**",
-      "!node_modules/onnxruntime-node/bin/napi-v*/{linux,win32}/**",
-      "!node_modules/onnxruntime-node/bin/napi-v*/darwin/*/libonnxruntime.1.*.*.dylib",
       "!node_modules/@huggingface/transformers/dist/transformers{,.min,.web,.web.min,.node.min}.{js,cjs,mjs}",
       "!node_modules/@huggingface/transformers/dist/transformers.node.cjs",
       "!node_modules/{protobufjs,@protobufjs,flatbuffers,long}/**",
@@ -108,6 +107,10 @@
       }
     ],
     "mac": {
+      "files": [
+        "!node_modules/onnxruntime-node/bin/napi-v*/{linux,win32}/**",
+        "!node_modules/onnxruntime-node/bin/napi-v*/darwin/*/libonnxruntime.1.*.*.dylib"
+      ],
       "identity": null,
       "category": "public.app-category.productivity",
       "minimumSystemVersion": "14.2",
@@ -121,6 +124,15 @@
         "NSCalendarsUsageDescription": "Glint reads the invite for the meeting you're in when you press Guess, to match speakers to the people on it.",
         "LSUIElement": true
       }
+    },
+    "win": {
+      "target": "dir",
+      "icon": "build/icon.png",
+      "files": [
+        "!node_modules/onnxruntime-node/bin/napi-v*/{linux,darwin}/**",
+        "!node_modules/onnxruntime-node/bin/napi-v*/win32/arm64/**",
+        "!node_modules/audiotee/bin/**"
+      ]
     }
   }
 }

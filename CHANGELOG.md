@@ -1,7 +1,8 @@
 ## Unreleased
 
 - **Glint is public, and installs with curl.** `curl -fsSL https://raw.githubusercontent.com/TeXtUtility/Glint/main/install.sh | bash`, with no GitHub CLI or sign-in. Update checks talk to GitHub over plain HTTPS. Its app ID is now io.github.textutility.glint. Copies installed before this don't see updates: install once with the line above.
-- **CI.** Every push and pull request runs the type check, the tests and a build on GitHub's Macs.
+- **CI.** Every push and pull request runs the type check, the tests and a build on GitHub's Macs, and on Windows.
+- **Glint for Windows.** Windows 10 2004 or later, 64-bit Intel and AMD. Install with `irm https://raw.githubusercontent.com/TeXtUtility/Glint/main/install.ps1 | iex`, which builds it from source as on a Mac and updates the same way. Everything works as on a Mac, with the same shortcuts: ⌘ is Ctrl, and the Win key stands in for ⌃, so ⌃⌘\ is Ctrl+Win+\. Windows hears the call through its own loopback, hides Glint from screen sharing, follows Ghost's typing with a listen-only keyboard hook, offers to take notes when a call app starts using the mic, runs commands in Windows Terminal or PowerShell, and reads PDFs, scans and images with its own text recognition. Not on Windows yet: calendar invites for Guess, and the Mac's blur behind the overlay.
 
 ## 0.15.0 (2026-10-02)
 

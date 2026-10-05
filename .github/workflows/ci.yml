@@ -17,11 +17,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # macOS: the tests use the Mac's own tools (textutil, say, afconvert), as on a user's Mac.
-        # Windows: the port. It can't fail the run until the port passes its tests.
+        # Each on its own system's tools (textutil, say and afconvert on a Mac; tar, PowerShell and its OCR on Windows).
         os: [macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ matrix.os == 'windows-latest' }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
