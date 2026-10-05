@@ -3,7 +3,7 @@ name: CI
 
 on:
   push:
-    branches: [main, beta]
+    branches: [main, beta, windows]
   pull_request:
   workflow_dispatch:
 
@@ -14,8 +14,14 @@ concurrency:
 
 jobs:
   check:
-    # macOS: the tests use the Mac's own tools (textutil, say, afconvert), as on a user's Mac.
-    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # macOS: the tests use the Mac's own tools (textutil, say, afconvert), as on a user's Mac.
+        # Windows: the port. It can't fail the run until the port passes its tests.
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.os == 'windows-latest' }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
