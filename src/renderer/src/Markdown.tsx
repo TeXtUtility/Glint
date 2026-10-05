@@ -6,7 +6,7 @@ import rehypeKatex from 'rehype-katex'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import { normalizeMath, scrub } from '../../shared/markdown'
-import { glint } from './glint'
+import { glint, isMac } from './glint'
 import { Icon } from './icons'
 
 // No raw HTML is rendered (react-markdown's default), so model output can't inject markup.
@@ -19,7 +19,7 @@ import { Icon } from './icons'
 export const streamEvery = (chars: number) => Math.min(250, chars / 25)
 
 /** Blocks of these languages get Run: shell commands. */
-const SHELL = new Set(['bash', 'sh', 'zsh', 'shell', 'console', 'terminal', 'shell-session', 'shellsession'])
+const SHELL = new Set(['bash', 'sh', 'zsh', 'shell', 'console', 'terminal', 'shell-session', 'shellsession', ...(isMac ? [] : ['powershell', 'pwsh', 'ps1', 'ps', 'cmd', 'bat'])])
 
 /** Copy with a check that says Copied for a moment. `text` is read on click, from what's on screen. */
 function CopyButton({ text, tip }: { text: () => string; tip: string }) {

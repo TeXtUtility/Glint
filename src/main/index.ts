@@ -9,7 +9,7 @@ import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { format } from 'node:util'
 import { askEffort, elapsedMs, formatElapsed, GHOST_FONT_RANGE, GHOST_OPACITY_RANGE, isLanguageCode, nativeAccelerator, NOTE_MAX, phase, searchesFiles, type AskPayload, type KeyProvider, type Mode, type Perm, type Session, type ShortcutAction, type State } from '../shared/state'
-import { NAME_GUESS_SYSTEM_PROMPT, nameGuessContext, nameGuessQuestion, parseNameGuess, SAMPLE_CALL, systemPrompt } from '../shared/prompt'
+import { NAME_GUESS_SYSTEM_PROMPT, nameGuessContext, nameGuessQuestion, parseNameGuess, SAMPLE_CALL, systemPrompt, WINDOWS_PROMPT } from '../shared/prompt'
 import { transcriptText } from '../shared/history'
 import { HUMANIZER_LABELS, HUMANIZERS, humanizes, type HumanizerConfig, type HumanizerService } from '../shared/humanize'
 import { scrub } from '../shared/markdown'
@@ -202,7 +202,8 @@ function boot() {
 }
 
 /** The system prompt for an ask, in cached blocks: the mode's reference files, then the instructions. */
-const askSystem = (mode: Mode | undefined) => [referenceFor(mode), systemPrompt(mode)].filter((x): x is string => !!x)
+const askSystem = (mode: Mode | undefined) =>
+  [referenceFor(mode), systemPrompt(mode), process.platform === 'win32' ? WINDOWS_PROMPT : ''].filter((x): x is string => !!x)
 
 let warmedFor = ''
 let warmTimer: NodeJS.Timeout | undefined
@@ -700,7 +701,7 @@ let keysPoll: NodeJS.Timeout | undefined
  * few seconds, so allowing it in System Settings takes effect without a restart.
  */
 function syncKeys(s: State) {
-  const want = s.layout === 'ghost' && phase(s) === 'app' && isMac
+  const want = s.layout === 'ghost' && phase(s) === 'app' && (isMac || process.platform === 'win32')
   clearInterval(keysPoll)
   if (!want) return stopKeys()
   const start = () => {

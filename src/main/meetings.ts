@@ -100,12 +100,118 @@ export function openWindows(): { app: string; title: string }[] {
   return out
 }
 
+let winNative: ReturnType<typeof loadWin> | null = null
+const winLib = () => (winNative ??= loadWin())
+
+function loadWin() {
+  const advapi = koffi.load('advapi32.dll')
+  const user32 = koffi.load('user32.dll')
+  const kernel32 = koffi.load('kernel32.dll')
+  const proto = koffi.proto('bool GlintEnumWindows(void *hwnd, intptr_t param)')
+  return {
+    proto,
+    open: advapi.func('long RegOpenKeyExW(intptr_t key, str16 sub, uint32_t opts, uint32_t sam, _Out_ intptr_t *out)'),
+    enumKey: advapi.func('long RegEnumKeyExW(intptr_t key, uint32_t i, _Out_ uint16_t *name, _Inout_ uint32_t *len, void *r, void *c, void *cl, void *t)'),
+    qword: advapi.func('long RegGetValueW(intptr_t key, str16 sub, str16 value, uint32_t flags, void *type, _Out_ uint64_t *data, _Inout_ uint32_t *size)'),
+    close: advapi.func('long RegCloseKey(intptr_t key)'),
+    enumWindows: user32.func('bool EnumWindows(GlintEnumWindows *cb, intptr_t param)'),
+    visible: user32.func('bool IsWindowVisible(void *hwnd)'),
+    title: user32.func('int GetWindowTextW(void *hwnd, _Out_ uint16_t *buf, int max)'),
+    pidOf: user32.func('uint32_t GetWindowThreadProcessId(void *hwnd, _Out_ uint32_t *pid)'),
+    openProcess: kernel32.func('void *OpenProcess(uint32_t access, bool inherit, uint32_t pid)'),
+    imageName: kernel32.func('bool QueryFullProcessImageNameW(void *proc, uint32_t flags, _Out_ uint16_t *buf, _Inout_ uint32_t *len)'),
+    closeHandle: kernel32.func('bool CloseHandle(void *h)'),
+  }
+}
+
+const HKCU = -2147483647 // 0x80000001, sign-extended as Windows does
+const utf16 = (buf: Uint16Array, len: number) => String.fromCharCode(...buf.subarray(0, len))
+
+/** Subkeys of an open registry key. */
+function subkeys(key: number): string[] {
+  const n = winLib()
+  const out: string[] = []
+  for (let i = 0; ; i++) {
+    const buf = new Uint16Array(512)
+    const len = [buf.length]
+    if (n.enumKey(key, i, buf, len, null, null, null, null)) return out
+    out.push(utf16(buf, len[0]))
+  }
+}
+
+/** Windows logs each app's mic use under ConsentStore; one whose last use hasn't stopped is using it now. */
+export function micUsersWin(): string[] {
+  const n = winLib()
+  const root = [0]
+  if (n.open(HKCU, 'Software\\Microsoft\\Windows\\CurrentVersion\\CapabilityAccessManager\\ConsentStore\\microphone', 0, 0x20019, root)) return []
+  const inUse = (key: number, sub: string) => {
+    const [start, stop] = ['LastUsedTimeStart', 'LastUsedTimeStop'].map((v) => {
+      const data = [0]
+      return n.qword(key, sub, v, 0x40, null, data, [8]) ? 0 : Number(data[0])
+    })
+    return start > 0 && stop === 0
+  }
+  const out: string[] = []
+  try {
+    for (const app of subkeys(root[0])) {
+      if (app !== 'NonPackaged') {
+        if (inUse(root[0], app)) out.push(app.toLowerCase())
+        continue
+      }
+      const np = [0]
+      if (n.open(root[0], app, 0, 0x20019, np)) continue
+      try {
+        for (const exe of subkeys(np[0])) if (inUse(np[0], exe)) out.push(exe.split('#').at(-1)!.toLowerCase())
+      } finally {
+        n.close(np[0])
+      }
+    }
+  } finally {
+    n.close(root[0])
+  }
+  return out
+}
+
+/** Visible windows with a title, each with the exe that owns it. */
+export function openWindowsWin(): { app: string; title: string }[] {
+  const n = winLib()
+  const exes = new Map<number, string>()
+  const out: { app: string; title: string }[] = []
+  const exeOf = (pid: number) => {
+    if (!exes.has(pid)) {
+      const proc = n.openProcess(0x1000, false, pid) // PROCESS_QUERY_LIMITED_INFORMATION
+      const buf = new Uint16Array(1024)
+      const len = [buf.length]
+      exes.set(pid, proc && n.imageName(proc, 0, buf, len) ? utf16(buf, len[0]).split('\\').at(-1)!.toLowerCase() : '')
+      if (proc) n.closeHandle(proc)
+    }
+    return exes.get(pid)!
+  }
+  const cb = koffi.register((hwnd: unknown) => {
+    if (!n.visible(hwnd)) return true
+    const buf = new Uint16Array(512)
+    const len = n.title(hwnd, buf, buf.length)
+    if (len <= 0) return true
+    const pid = [0]
+    n.pidOf(hwnd, pid)
+    out.push({ app: exeOf(pid[0]), title: utf16(buf, len) })
+    return true
+  }, koffi.pointer(n.proto))
+  try {
+    n.enumWindows(cb, 0)
+  } finally {
+    koffi.unregister(cb)
+  }
+  return out
+}
+
 /** The calls going on now, by app name ("Zoom", "Google Meet"). */
 export function currentCalls(): string[] {
-  if (process.platform !== 'darwin') return []
-  const users = micUsers()
+  const win = process.platform === 'win32'
+  if (process.platform !== 'darwin' && !win) return []
+  const users = win ? micUsersWin() : micUsers()
   if (!users.length) return []
-  return callsNow(users, browserHasMic(users) ? openWindows() : [])
+  return callsNow(users, browserHasMic(users) ? (win ? openWindowsWin() : openWindows()) : [])
 }
 
 /** Calls already offered (taken up, dismissed, or going on during a session), until they end. */

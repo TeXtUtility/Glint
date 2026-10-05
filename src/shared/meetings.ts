@@ -21,12 +21,25 @@ const CALL_APPS: [string, string][] = [
   ['com.amazon.amazon-chime', 'Amazon Chime'],
   ['com.ringcentral.', 'RingCentral'],
   ['net.whatsapp.whatsapp', 'WhatsApp'],
+  // Windows: the exe, or the package of a Store app.
+  ['ms-teams.exe', 'Microsoft Teams'],
+  ['msteams_8wekyb3d8bbwe', 'Microsoft Teams'],
+  ['teams.exe', 'Microsoft Teams'],
+  ['zoom.exe', 'Zoom'],
+  ['ciscocollabhost.exe', 'Webex'],
+  ['atmgr.exe', 'Webex'],
+  ['slack.exe', 'Slack'],
+  ['discord.exe', 'Discord'],
+  ['g2mcomm.exe', 'GoTo Meeting'],
+  ['ringcentral.exe', 'RingCentral'],
+  ['5319275a.whatsappdesktop_cv1g1gvanyjgm', 'WhatsApp'],
 ]
 
 /** Browsers (and WebKit's media process, which Safari's tabs use): a call there is told apart by its window title. */
 const BROWSERS = [
   'com.google.chrome', 'company.thebrowser.', 'com.apple.safari', 'com.apple.webkit.gpu', 'org.mozilla.firefox',
   'com.microsoft.edgemac', 'com.brave.browser', 'com.vivaldi.vivaldi', 'com.operasoftware.opera',
+  'chrome.exe', 'msedge.exe', 'firefox.exe', 'brave.exe', 'opera.exe', 'vivaldi.exe', 'arc.exe',
 ]
 
 /**

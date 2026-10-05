@@ -8,6 +8,7 @@ import { dialog } from 'electron'
 import { freshUserData } from '../test/electron.ts'
 import { addModeFiles, referenceFor, sweepModeFiles } from './files.ts'
 import { getState, initState, patchState } from './state.ts'
+import { TAR } from './system.ts'
 
 test('sweepModeFiles: deletes stored files no mode uses, but not those a state.json.bad still names', () => {
   const dir = freshUserData()
@@ -24,6 +25,59 @@ test('sweepModeFiles: deletes stored files no mode uses, but not those a state.j
   fs.rmSync(path.join(dir, 'state.json.bad'))
   sweepModeFiles()
   assert.deepEqual(fs.readdirSync(stored), [`${used}.glint`])
+})
+
+/** A one-page PDF with a text layer, its cross-reference table at the offsets it really has. */
+function pdf(text: string): Buffer {
+  const objs = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
+    `<< /Length ${text.length + 30} >>\nstream\nBT /F1 24 Tf 72 700 Td (${text}) Tj ET\nendstream`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+  ]
+  let out = '%PDF-1.4\n'
+  const at = objs.map((o, i) => {
+    const offset = out.length
+    out += `${i + 1} 0 obj\n${o}\nendobj\n`
+    return offset
+  })
+  const xref = out.length
+  out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n${at.map((o) => `${String(o).padStart(10, '0')} 00000 n \n`).join('')}`
+  return Buffer.from(`${out}trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`, 'latin1')
+}
+
+test('addModeFiles on Windows: Word, OpenDocument, EPUB, HTML, RTF, PDF and images', { skip: process.platform !== 'win32' && 'Windows only' }, async () => {
+  const dir = freshUserData()
+  initState({})
+  patchState({ modes: [{ id: 'm1', name: 'Reading', prompt: '' }] })
+  const zip = (name: string, files: Record<string, string>) => {
+    const src = path.join(dir, `${name}-src`)
+    for (const [f, body] of Object.entries(files)) (fs.mkdirSync(path.dirname(path.join(src, f)), { recursive: true }), fs.writeFileSync(path.join(src, f), body))
+    execFileSync(TAR, ['-a', '-cf', path.join(dir, `${name}.zip`), ...Object.keys(files).map((f) => f.split('/')[0]).filter((f, i, a) => a.indexOf(f) === i)], { cwd: src })
+    fs.renameSync(path.join(dir, `${name}.zip`), path.join(dir, name))
+    return path.join(dir, name)
+  }
+  const docx = zip('cv.docx', { 'word/document.xml': '<w:document><w:body><w:p><w:r><w:t>Led the payments team</w:t></w:r></w:p></w:body></w:document>' })
+  const odt = zip('notes.odt', { 'content.xml': '<office:document-content><text:p>Quarterly plan</text:p></office:document-content>' })
+  const epub = zip('book.epub', {
+    'META-INF/container.xml': '<container><rootfiles><rootfile full-path="OEBPS/content.opf"/></rootfiles></container>',
+    'OEBPS/content.opf': '<package><manifest><item id="c1" href="one.xhtml"/></manifest><spine><itemref idref="c1"/></spine></package>',
+    'OEBPS/one.xhtml': '<html><body><p>Chapter one.</p></body></html>',
+  })
+  const html = path.join(dir, 'page.html')
+  fs.writeFileSync(html, '<html><body><h1>Pricing</h1><p>Seats &amp; plans</p></body></html>')
+  const rtf = path.join(dir, 'memo.rtf')
+  fs.writeFileSync(rtf, "{\\rtf1\\ansi{\\fonttbl{\\f0 Arial;}}\\f0 Memo: caf\\'e9 at noon\\par}")
+  const doc = path.join(dir, 'report.pdf')
+  fs.writeFileSync(doc, pdf('Revenue grew twelve percent'))
+  const files = [docx, odt, epub, html, rtf, doc]
+  mock.method(dialog, 'showOpenDialog', async () => ({ canceled: false, filePaths: files }))
+  const problems = await addModeFiles('m1', null)
+  mock.restoreAll()
+  assert.deepEqual(problems, [])
+  const text = referenceFor(getState().modes[0]) ?? ''
+  for (const want of ['Led the payments team', 'Quarterly plan', 'Chapter one.', 'Seats & plans', 'Memo: café at noon', '[page 1]', 'Revenue grew twelve percent']) assert.ok(text.includes(want), want)
 })
 
 test("addModeFiles: an EPUB chapter that's a link to a file outside the book isn't read", { skip: process.platform === 'win32' && 'symlinks need admin rights on Windows' }, async () => {

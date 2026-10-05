@@ -1,18 +1,19 @@
 // "Run" on a code block: the commands open in the user's terminal behind a y/N prompt, so nothing runs until they
 // read it and press y. The commands then run in their own shell (aliases, PATH, working directory). iTerm and Terminal
 // get them in a window that's already open and idle; the others, which can't be scripted that way, in a new window.
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
 import type { TerminalApp } from '../shared/state'
+import { POWERSHELL } from './system'
 
 const run = promisify(execFile)
 
 /** Where each terminal lives, in the order "Automatic" prefers them. */
-const APPS: Record<Exclude<TerminalApp, 'auto'>, string> = {
+const APPS: Record<Exclude<TerminalApp, 'auto' | 'Windows Terminal' | 'PowerShell'>, string> = {
   iTerm: '/Applications/iTerm.app',
   Ghostty: '/Applications/Ghostty.app',
   kitty: '/Applications/kitty.app',
@@ -21,13 +22,25 @@ const APPS: Record<Exclude<TerminalApp, 'auto'>, string> = {
   Terminal: '/System/Applications/Utilities/Terminal.app',
 }
 
-/** The terminals this Mac has. */
-export const installedTerminals = () => (Object.keys(APPS) as (keyof typeof APPS)[]).filter((a) => fs.existsSync(APPS[a]))
+const WIN_APPS: Record<'Windows Terminal' | 'PowerShell', string> = {
+  'Windows Terminal': path.join(process.env.LOCALAPPDATA ?? '', 'Microsoft', 'WindowsApps', 'wt.exe'),
+  PowerShell: POWERSHELL,
+}
+const PWSH = path.join(process.env.ProgramFiles ?? 'C:\\Program Files', 'PowerShell', '7', 'pwsh.exe')
+
+// wt.exe is an app alias, which existsSync can't follow.
+const present = (file: string) => !!fs.lstatSync(file, { throwIfNoEntry: false })
+
+/** The terminals this computer has. */
+export const installedTerminals = (): TerminalApp[] =>
+  process.platform === 'win32'
+    ? (Object.keys(WIN_APPS) as (keyof typeof WIN_APPS)[]).filter((a) => present(WIN_APPS[a]))
+    : (Object.keys(APPS) as (keyof typeof APPS)[]).filter((a) => fs.existsSync(APPS[a]))
 
 /** "Automatic": a terminal that's already open, else the first installed. */
 async function pick(choice: TerminalApp): Promise<keyof typeof APPS> {
-  const have = installedTerminals()
-  if (choice !== 'auto' && have.includes(choice)) return choice
+  const have = installedTerminals() as (keyof typeof APPS)[]
+  if (choice in APPS && have.includes(choice as keyof typeof APPS)) return choice as keyof typeof APPS
   try {
     const { stdout } = await run('/bin/ps', ['-axo', 'comm='])
     const open = have.find((a) => stdout.includes(`${path.basename(APPS[a])}/`))
@@ -42,7 +55,7 @@ async function pick(choice: TerminalApp): Promise<keyof typeof APPS> {
  */
 export function commandsOf(code: string): string {
   const lines = code.replace(/\r\n?/g, '\n').replace(/\n+$/, '').split('\n')
-  const prompt = /^\s*[$%] /
+  const prompt = /^\s*(?:[$%]|PS(?: [^>\n]*)?>) /
   if (!lines.some((l) => prompt.test(l))) return lines.join('\n')
   const kept: string[] = []
   let more = false
@@ -101,6 +114,45 @@ export function wrapper(shell: 'zsh' | 'bash', commandsFile: string, commands: s
     ...(cleanup ? [`rm -rf ${q(cleanup)}`] : []),
     '',
   ].join('\n')
+}
+
+/** PowerShell's version of the wrapper: the same review and y/N, then the commands dot-sourced into this session. */
+export function psWrapper(commandsFile: string, commands: string, cleanup?: string): string {
+  const q = (s: string) => `'${s.replace(/'/g, "''")}'`
+  return [
+    "Write-Host ''; Write-Host 'Glint wants to run:' -ForegroundColor White; Write-Host ''",
+    `Write-Host ${q(commands)}`,
+    "Write-Host ''; Write-Host 'Check these before you press y: commands can change or delete files, and AI can get them wrong.' -ForegroundColor Red",
+    "Write-Host -NoNewline 'Run it? [y/N] '",
+    "$__glint = if ([Console]::IsInputRedirected) { [Console]::In.ReadLine() } else { [string]$Host.UI.RawUI.ReadKey('IncludeKeyDown').Character }",
+    'if ($__glint -match \'^[yY]\') {',
+    "  Write-Host ''; Write-Host ''",
+    `  . ${q(commandsFile)}`,
+    '} else {',
+    "  Write-Host ''; Write-Host 'Not run.'",
+    '}',
+    ...(cleanup ? [`Remove-Item -LiteralPath ${q(cleanup)} -Recurse -Force -ErrorAction SilentlyContinue`] : []),
+    '',
+  ].join('\r\n')
+}
+
+const BOM = String.fromCharCode(0xfeff)
+
+async function runOnWindows(commands: string, choice: TerminalApp, newWindow: boolean): Promise<string> {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'glint-run-'))
+  const commandsFile = path.join(dir, 'commands.ps1')
+  const wrap = path.join(dir, 'run.ps1')
+  // A BOM, so Windows PowerShell reads the scripts as UTF-8.
+  fs.writeFileSync(commandsFile, `${BOM}${commands}\r\n`)
+  fs.writeFileSync(wrap, `${BOM}${psWrapper(commandsFile, commands, dir)}`)
+  const have = installedTerminals()
+  const app = choice !== 'auto' && have.includes(choice) ? choice : have[0] ?? 'PowerShell'
+  const shell = [fs.existsSync(PWSH) ? PWSH : POWERSHELL, '-NoLogo', '-NoExit', '-ExecutionPolicy', 'Bypass', '-File', wrap]
+  const opts = { cwd: os.homedir(), stdio: 'ignore' as const }
+  if (app === 'Windows Terminal') spawn(WIN_APPS[app], ['-w', newWindow ? 'new' : '0', 'new-tab', '-d', os.homedir(), ...shell], opts).unref()
+  // start gives PowerShell a console window of its own; Windows paths can't hold quotes, so quoting them is safe.
+  else spawn('cmd.exe', ['/d', '/c', `start "" ${shell.map((a) => (/[\s"]/.test(a) || a.includes('\\') ? `"${a}"` : a)).join(' ')}`], { ...opts, windowsVerbatimArguments: true }).unref()
+  return app
 }
 
 const osa = (script: string, ...args: string[]) => run('/usr/bin/osascript', ['-e', script, ...args]).then((r) => r.stdout.trim())
@@ -195,6 +247,7 @@ export async function runInTerminal(code: string, choice: TerminalApp, newWindow
   const commands = commandsOf(code)
   if (!commands.trim()) throw new Error('There are no commands in this block.')
   if (hasHiddenControls(commands)) throw new Error("This block has hidden control characters that could disguise what it runs, so Glint won't run it.")
+  if (process.platform === 'win32') return runOnWindows(commands, choice, newWindow)
   const shellPath = os.userInfo().shell || process.env.SHELL || '/bin/zsh'
   const shell = shellPath.endsWith('bash') ? 'bash' : 'zsh' // other shells: zsh runs the prompt, then the commands
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'glint-run-'))

@@ -4,7 +4,8 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { test } from 'node:test'
-import { commandsOf, hasHiddenControls, idleTty, wrapper } from './run.ts'
+import { commandsOf, hasHiddenControls, idleTty, psWrapper, wrapper } from './run.ts'
+import { POWERSHELL } from './system.ts'
 
 test('commandsOf: a console block keeps only its prompted lines, without the prompt', () => {
   assert.equal(commandsOf('npm ci\nnpm run build\n'), 'npm ci\nnpm run build')
@@ -47,6 +48,33 @@ test('wrapper: shows the commands, runs them only on y, in the same shell', { sk
   execFileSync('/bin/bash', ['-c', `source '${path.join(own, 'run.sh')}'`], { input: 'n', env: { ...process.env, TERM: 'dumb' } })
   assert.equal(fs.existsSync(own), false)
   fs.rmSync(dir, { recursive: true })
+})
+
+test('psWrapper: shows the commands, runs them only on y, in the same session', { skip: process.platform !== 'win32' && 'Windows PowerShell only' }, () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'glint-run-test-'))
+  const cmds = path.join(dir, 'commands.ps1')
+  const marker = path.join(dir, 'ran')
+  fs.writeFileSync(cmds, `New-Item -ItemType File '${marker}' | Out-Null\r\nSet-Location '${dir}'\r\n`)
+  const shell = (answer: string, cleanup?: string) => {
+    const wrap = path.join(cleanup ?? dir, 'run.ps1')
+    fs.writeFileSync(wrap, `${psWrapper(cmds, `New-Item '${marker}'`, cleanup)}(Get-Location).Path\r\n`)
+    return execFileSync(POWERSHELL, ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', wrap], { input: `${answer}\r\n` }).toString()
+  }
+  const no = shell('n')
+  assert.match(no, /Glint wants to run:/)
+  assert.match(no, /Not run\./)
+  assert.equal(fs.existsSync(marker), false)
+  const yes = shell('y')
+  assert.equal(fs.existsSync(marker), true)
+  assert.match(yes.trim(), new RegExp(`${path.basename(dir)}$`))
+  const own = fs.mkdtempSync(path.join(os.tmpdir(), 'glint-run-test-own-'))
+  shell('n', own)
+  assert.equal(fs.existsSync(own), false)
+  fs.rmSync(dir, { recursive: true })
+})
+
+test('commandsOf: a PowerShell prompt is the reader\'s too', () => {
+  assert.equal(commandsOf('PS C:\\Users\\me> npm ci\nadded 3 packages\nPS> git status'), 'npm ci\ngit status')
 })
 
 test('idleTty: a tab is idle only when its shell is all that runs in the foreground', () => {

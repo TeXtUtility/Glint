@@ -2,7 +2,7 @@
 // while its mode is active: the model reads the whole thing, and the API caches it, so later asks read it at a
 // fraction of the price. Nothing is summarised or left out. Past MODE_FILES_WHOLE_CHARS, each ask gets the passages
 // that best match it instead (src/shared/search.ts). PDF, EPUB, Word and images use what macOS ships with
-// (PDFKit, textutil, Vision), so there's nothing extra to install.
+// (PDFKit, textutil, Vision), so there's nothing extra to install; Windows has its own (files-win.ts).
 import { app, dialog, safeStorage, type BrowserWindow } from 'electron'
 import { execFile, spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
@@ -13,6 +13,7 @@ import { promisify } from 'node:util'
 import { buildIndex, NO_PASSAGES, search, type Passages, type SearchIndex } from '../shared/search'
 import { MODE_FILES_MAX_CHARS, searchesFiles, type Mode, type State } from '../shared/state'
 import { getState, patchState } from './state'
+import { chaptersText, extractWin, unzip } from './files-win'
 
 const run = promisify(execFile)
 const dir = () => path.join(app.getPath('userData'), 'mode-files')
@@ -148,7 +149,8 @@ async function extract(file: string, onProgress?: Progress): Promise<{ text: str
   if (size > FILE_MAX_BYTES) throw new Error(`is over ${FILE_MAX_BYTES / 1024 / 1024} MB`)
   const ext = path.extname(file).slice(1).toLowerCase()
   const native = ext === 'pdf' || ext === 'epub' || TEXTUTIL.includes(ext) || IMAGES.includes(ext)
-  if (native && process.platform !== 'darwin') throw new Error('can only be read on macOS; add it as plain text')
+  if (native && process.platform === 'win32' && ext !== 'epub') return extractWin(file, ext, IMAGES, onProgress)
+  if (native && process.platform !== 'darwin' && process.platform !== 'win32') throw new Error('can only be read on macOS; add it as plain text')
   if (ext === 'pdf' || IMAGES.includes(ext)) return pdfOrImageText(file, ext === 'pdf', onProgress)
   if (ext === 'epub') return { text: await epubText(file) }
   if (TEXTUTIL.includes(ext)) {
@@ -292,7 +294,8 @@ function pdfOrImageText(file: string, pdf: boolean, onProgress?: Progress): Prom
 /** An EPUB is a zip of XHTML chapters; the package file lists them in reading order (the spine). */
 function epubText(file: string): Promise<string> {
   return withTemp(async (tmp) => {
-    await run('/usr/bin/unzip', ['-qq', '-o', file, '-d', tmp], { timeout: 120_000 }) // unzip drops ../ from paths
+    if (process.platform === 'win32') await unzip(file, tmp) // bsdtar refuses ../ paths
+    else await run('/usr/bin/unzip', ['-qq', '-o', file, '-d', tmp], { timeout: 120_000 }) // unzip drops ../ from paths
     // unzip restores symlinks, which could point anywhere (~/.ssh, /dev/zero): only regular files that really are
     // inside the folder, links followed, are read.
     const root = await fs.promises.realpath(tmp) // the temp folder's own path has a link in it on macOS
@@ -317,7 +320,7 @@ function epubText(file: string): Promise<string> {
       .map((href) => inside(path.resolve(tmp, path.dirname(opfPath), decodeURIComponent(href.split('#')[0]))))
       .filter((f): f is string => !!f)
     if (!chapters.length) throw new Error('has no chapters Glint can find')
-    return textutil(chapters, true) // EPUB text is UTF-8
+    return process.platform === 'win32' ? chaptersText(chapters) : textutil(chapters, true) // EPUB text is UTF-8
   })
 }
 

@@ -3,7 +3,9 @@
 // It also sees modifier changes, for Ghost's double-tap Control. macOS asks for Input Monitoring the first time;
 // secure fields (passwords) are never seen at all.
 import koffi from 'koffi'
+import type { Worker } from 'node:worker_threads'
 import { ControlDoubleTap } from '../shared/typing'
+import createKeysWorker from './keys-worker?nodeWorker'
 
 export type KeyInput = { type: 'text'; text: string } | { type: 'backspace' }
 
@@ -70,11 +72,45 @@ export function readKey(event: unknown): KeyInput | null {
 
 let tap: { port: unknown; source: unknown; callback: ReturnType<typeof koffi.register> } | null = null
 
-/** Has Glint been allowed to see keystrokes (Input Monitoring)? */
-export const keysAllowed = () => process.platform === 'darwin' && !!lib().preflight()
+const isWindows = process.platform === 'win32'
+
+/** Has Glint been allowed to see keystrokes (Input Monitoring)? Windows doesn't ask. */
+export const keysAllowed = () => isWindows || (process.platform === 'darwin' && !!lib().preflight())
 
 /** Asks macOS for Input Monitoring: the first time it shows the system prompt, after that it opens nothing. */
-export const requestKeys = () => process.platform === 'darwin' && !!lib().request()
+export const requestKeys = () => isWindows || (process.platform === 'darwin' && !!lib().request())
+
+let winHook: { worker: Worker; thread: number | null; stopping: boolean } | null = null
+
+function watchKeysWin() {
+  if (winHook) return true
+  const worker = createKeysWorker()
+  const h = (winHook = { worker, thread: null as number | null, stopping: false })
+  worker.on('message', (m: { t: string; thread?: number; key?: KeyInput; message?: string }) => {
+    if (m.t === 'ready') (h.thread = m.thread!), h.stopping && quitThread(h.thread)
+    else if (m.t === 'key' && winHook === h) handlers.onKey(m.key!)
+    else if (m.t === 'ctrl2' && winHook === h) handlers.onDoubleControl()
+    else if (m.t === 'error') console.error('[keys]', m.message)
+  })
+  worker.on('error', (err) => console.error('[keys] hook failed:', err))
+  worker.on('exit', () => winHook === h && (winHook = null))
+  return true
+}
+
+let postQuit: ((thread: number, msg: number, w: number, l: number) => boolean) | null = null
+/** The hook's thread sits in GetMessage, so it's ended with WM_QUIT rather than terminate(). */
+function quitThread(thread: number) {
+  postQuit ??= koffi.load('user32.dll').func('bool PostThreadMessageW(uint32_t thread, uint32_t msg, uintptr_t w, intptr_t l)')
+  postQuit(thread, 0x12, 0, 0)
+}
+
+function stopKeysWin() {
+  if (!winHook) return
+  const h = winHook
+  winHook = null
+  h.stopping = true
+  if (h.thread) quitThread(h.thread)
+}
 
 let handlers: { onKey: (k: KeyInput) => void; onDoubleControl: () => void } = { onKey: () => {}, onDoubleControl: () => {} }
 const controlTaps = new ControlDoubleTap()
@@ -85,6 +121,7 @@ const controlTaps = new ControlDoubleTap()
  */
 export function watchKeys(onKey: (k: KeyInput) => void, onDoubleControl: () => void): boolean {
   handlers = { onKey, onDoubleControl }
+  if (isWindows) return watchKeysWin()
   if (tap) return true
   if (!keysAllowed()) return false
   const n = lib()
@@ -118,6 +155,7 @@ export function watchKeys(onKey: (k: KeyInput) => void, onDoubleControl: () => v
 }
 
 export function stopKeys() {
+  if (isWindows) return stopKeysWin()
   if (!tap) return
   const n = lib()
   n.tapEnable(tap.port, false)

@@ -138,8 +138,8 @@ export const VOICE_RANGES: Record<keyof VoiceSettings, [number, number, number]>
 
 export type AutoCopy = 'off' | 'reply' | 'code'
 /** Where a code block's Run opens; 'auto' is one already open, else the first installed. */
-export type TerminalApp = 'auto' | 'Terminal' | 'iTerm' | 'Ghostty' | 'kitty' | 'WezTerm' | 'Alacritty'
-export const TERMINAL_APPS: TerminalApp[] = ['auto', 'Terminal', 'iTerm', 'Ghostty', 'kitty', 'WezTerm', 'Alacritty']
+export type TerminalApp = 'auto' | 'Terminal' | 'iTerm' | 'Ghostty' | 'kitty' | 'WezTerm' | 'Alacritty' | 'Windows Terminal' | 'PowerShell'
+export const TERMINAL_APPS: TerminalApp[] = ['auto', 'Terminal', 'iTerm', 'Ghostty', 'kitty', 'WezTerm', 'Alacritty', 'Windows Terminal', 'PowerShell']
 export type Corner = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
 export const CORNERS: Corner[] = ['top-left', 'top-right', 'bottom-left', 'bottom-right']
 /** Glance: seconds between automatic answers, [min, max, step]. */

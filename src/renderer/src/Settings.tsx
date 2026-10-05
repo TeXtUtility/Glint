@@ -270,12 +270,12 @@ function TerminalRow({ s }: { s: State }) {
   const options = TERMINAL_APPS.filter((a) => a === 'auto' || a === s.terminalApp || have?.includes(a))
   return (
     <>
-      <Row as="label" label="Run commands in" hint="A command block's Run types it into a window of this terminal that isn't busy, and asks y/N before running anything. Automatic uses a terminal that's already open.">
+      <Row as="label" label="Run commands in" hint={isMac ? "A command block's Run types it into a window of this terminal that isn't busy, and asks y/N before running anything. Automatic uses a terminal that's already open." : 'A command block\'s Run opens it in PowerShell in this terminal, and asks y/N before running anything.'}>
         <select value={s.terminalApp} onChange={(e) => patch({ terminalApp: e.target.value as TerminalApp })}>
           {options.map((a) => <option key={a} value={a}>{a === 'auto' ? 'Automatic' : a}</option>)}
         </select>
       </Row>
-      <Toggle label="Open a new window every time" hint="Off: iTerm and Terminal use an open window that isn't busy, and open one only when there's none. Other terminals always open a new window."
+      <Toggle label="Open a new window every time" hint={isMac ? "Off: iTerm and Terminal use an open window that isn't busy, and open one only when there's none. Other terminals always open a new window." : 'Off: Windows Terminal opens a new tab in its window. PowerShell always opens a new window.'}
         checked={s.runNewWindow} onChange={(v) => patch({ runNewWindow: v })} />
     </>
   )
