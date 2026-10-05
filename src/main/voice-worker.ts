@@ -2,6 +2,7 @@
 // 9 s line, which blocked windows, IPC and dragging when someone stopped talking. Ending the worker frees both models.
 import { parentPort } from 'node:worker_threads'
 import { OfflineSpeakerDiarization, SpeakerEmbeddingExtractor } from 'sherpa-onnx-node'
+import { serve } from './worker'
 
 type Message =
   | { t: 'load'; model: string; segmentation: string }
@@ -12,7 +13,7 @@ let extractor: SpeakerEmbeddingExtractor | null = null
 let splitter: OfflineSpeakerDiarization | null = null
 let paths = { model: '', segmentation: '' }
 
-parentPort!.on('message', (m: Message) => {
+serve((m: Message) => {
   try {
     if (m.t === 'load') {
       paths = { model: m.model, segmentation: m.segmentation }

@@ -6,7 +6,7 @@ import { app, safeStorage, shell } from 'electron'
 import type { SavedMessage } from '../shared/history.ts'
 import type { Session } from '../shared/state.ts'
 import { freshUserData } from '../test/electron.ts'
-import { initHistory, listSessions, loadSession, saveChat, trashSession, updateNotes } from './history.ts'
+import { initHistory, listSessions, loadSession, macSleeps, macWakes, saveChat, trashSession, updateNotes } from './history.ts'
 import { getState, initState, patchState } from './state.ts'
 
 // Autosaves run every 10 s, and an ended session's notes would call the AI: time only moves when a test ticks it.
@@ -75,4 +75,25 @@ test('a session id that could name a path outside the sessions folder is refused
   assert.match(getState().audioError ?? '', /bad session id/)
   assert.equal(fs.existsSync(path.join(dir, '..', 'escaped.glint')), false)
   assert.equal(fs.existsSync(path.join(dir, 'sessions')), false)
+})
+
+test('notes cut off by the Mac sleeping are written again once it wakes', async () => {
+  freshUserData()
+  patchState({ ai: { ...getState().ai, provider: 'openai', fallbacks: [] } }) // no key here: each attempt fails at once, offline
+  const settle = async () => { for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r)) }
+  const live: Session = { id: 'slept-1', chatId: 'c2', language: 'en', startedAt: Date.now(), isResumed: false, priorElapsedMs: 0, transcript: [line('Ship it Friday.', 1_000)] }
+  patchState({ session: live })
+  patchState({ session: null }) // ended: its notes start 1.5 s later
+  mock.method(console, 'error', () => {})
+  mock.timers.tick(1_500)
+  macSleeps() // the lid closes while they're being written
+  await settle()
+  assert.match(loadSession('slept-1').notesError ?? '', /went to sleep/)
+  macWakes()
+  mock.timers.tick(10_000)
+  await settle()
+  mock.restoreAll()
+  const r = loadSession('slept-1')
+  assert.equal(r.notesStatus, 'failed')
+  assert.doesNotMatch(r.notesError ?? '', /went to sleep/, 'tried again after waking (and failed for its own reason)')
 })
