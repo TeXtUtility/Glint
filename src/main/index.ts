@@ -24,7 +24,7 @@ import { watchCalls } from './meetings'
 import { calendarAccess, inviteFor, requestCalendar } from './calendar'
 import { inviteContext } from '../shared/meetings'
 import { finishAudio, flushAudio, initAudio, prepareModels, pushMic } from './audio'
-import { addToCalendar, draftFollowUp, generateNotes, initHistory, listSessions, loadSession, relabelSpeaker, renameSpeaker, resumeSession, saveChat, saveLiveSession, setMessages, trashSession, updateActions, updateNotes } from './history'
+import { addToCalendar, draftFollowUp, generateNotes, macSleeps, macWakes, initHistory, listSessions, loadSession, relabelSpeaker, renameSpeaker, resumeSession, saveChat, saveLiveSession, setMessages, trashSession, updateActions, updateNotes } from './history'
 import { deleteMe, deletePerson, endVoiceSession, enrollMe, forgetEveryone, initVoice, mergeSpeakers, nameVoice, renamePerson, settleSpeakers, skipVoice, voiceAudio, voiceSessionId } from './voice'
 import { setGlass, type GlassRect } from './mac-panel'
 import { installedTerminals, runInTerminal } from './run'
@@ -171,9 +171,11 @@ function boot() {
   app.on('before-quit', flushState)
   // A Mac asleep mid-session records nothing; pausing shows that, instead of a session that looks live.
   powerMonitor.on('suspend', () => {
+    macSleeps()
     const { session, pause } = getState()
     if (session && !pause.paused) togglePause()
   })
+  powerMonitor.on('resume', macWakes)
   removeLeftoverTemp()
   sweepModeFiles()
   sweepModels()

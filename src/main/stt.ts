@@ -14,6 +14,7 @@ import { speechModelFor, type LocalWhisper } from '../shared/state.ts'
 import { collapseRepeats, encodeWav } from './audio-core.ts' // extension lets plain Node run this for checks
 import createParakeet from './parakeet-worker?nodeWorker'
 import createWhisper from './whisper-worker?nodeWorker'
+import { stopWorker } from './worker'
 
 /** Transcribes one line of 16 kHz mono speech. */
 type Transcriber = (audio: Float32Array, language: string) => Promise<string>
@@ -106,7 +107,7 @@ async function inWorker(create: () => Worker, load: object, gen: number, onProgr
 /** Frees the speech model's memory (its worker ends); the next session loads it again in a second or two. */
 export function unloadLocalAsr() {
   generation++
-  void worker?.terminate()
+  if (worker) stopWorker(worker)
   worker = null
   local = null
 }

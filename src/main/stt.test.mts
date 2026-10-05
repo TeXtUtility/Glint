@@ -116,5 +116,7 @@ test('loadLocalAsr: unloaded while loading starts no worker; one that crashes is
   workers[1].emit('message', { t: 'ready' })
   await again
   unloadLocalAsr()
-  assert.equal(workers[1].terminated, true)
+  // Asked to quit after its current task, never terminated mid-decode (worker.ts).
+  assert.deepEqual(workers[1].posted.at(-1), { t: 'quit' })
+  assert.equal(workers[1].terminated, false)
 })

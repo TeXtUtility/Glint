@@ -6,6 +6,7 @@ import path from 'node:path'
 import type { Worker } from 'node:worker_threads'
 import type { State } from '../shared/state'
 import createWorker from './live-words-worker?nodeWorker'
+import { stopWorker } from './worker'
 import { getState, patchState } from './state'
 import { fetchSherpaModel } from './stt'
 
@@ -66,7 +67,7 @@ export function prepareLiveWords(modelsDir: string, onProgress?: (pct: number) =
 /** Frees the model's memory; the next session loads it again (about 2 s). */
 export function stopLiveWords() {
   generation++
-  void worker?.terminate()
+  if (worker) stopWorker(worker)
   worker = null
   ready = null
   active.me = active.them = 0

@@ -2,6 +2,7 @@
 // per 560 ms chunk on a base M1, which would stall the app's windows and IPC.
 import { parentPort } from 'node:worker_threads'
 import { OnlineRecognizer } from 'sherpa-onnx-node'
+import { serve } from './worker'
 
 type Stream = ReturnType<OnlineRecognizer['createStream']>
 type Message =
@@ -14,7 +15,7 @@ let rec: OnlineRecognizer | null = null
 /** Each side's stream, and which utterance it is: partials carry it so the app can drop a finished one's. */
 const streams = new Map<string, { st: Stream; seq: number }>()
 
-parentPort!.on('message', (m: Message) => {
+serve((m: Message) => {
   try {
     if (m.t === 'load') {
       const file = (f: string) => `${m.dir}/${f}`

@@ -1,13 +1,14 @@
 // Whisper (transformers.js) runs in this worker: onnxruntime decodes on the calling thread, about 500 ms per 5 s
 // line with whisper-base, which stalled the app's windows and IPC. Ending the worker frees the model.
 import { parentPort } from 'node:worker_threads'
+import { serve } from './worker'
 
 type WhisperAsr = (audio: Float32Array, opts: Record<string, unknown>) => Promise<{ text: string } | { text: string }[]>
 type Message = { t: 'load'; model: string; cacheDir: string } | { t: 'decode'; id: number; samples: Float32Array; language: string }
 
 let asr: WhisperAsr | null = null
 
-parentPort!.on('message', async (m: Message) => {
+serve(async (m: Message) => {
   try {
     if (m.t === 'load') {
       // Loaded here, not at launch: alone it's about 20 MB and most of a second, and only Whisper languages need it.
