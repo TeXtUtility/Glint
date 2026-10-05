@@ -175,6 +175,12 @@ function SessionDetail({ id, s, onBack, onContinue }: { id: string; s: State; on
         {back}
         {tabs.length > 1 ? <Segmented tabs label="Session view" value={tab} onChange={setTab} options={tabs} /> : <span />}
         <span className="detail-right">
+          {!isChat && !live && (
+            <button className="open-window" data-tip="Notes, action items and the email for every session, in a window"
+              onClick={() => glint.send('window:open-followup', id)}>
+              <Icon name="external" />Open window
+            </button>
+          )}
           <button className="chip resume" disabled={!!s.session}
             data-tip={s.session ? 'Stop the current session first' : isChat ? 'Reopen this chat in the panel and keep asking' : 'Keep recording this session; the timer picks up where it stopped'}
             onClick={() => (isChat ? onContinue(r) : glint.send('session:resume', id))}>
@@ -189,11 +195,6 @@ function SessionDetail({ id, s, onBack, onContinue }: { id: string; s: State; on
                     <button role="menuitem" data-tip="Have your AI write the notes again; your ticks, dates, owners and edits are kept"
                       onClick={() => (setMore(false), glint.send('sessions:notes', id))}>
                       <Icon name="refresh" size={13} /> {r.summary ? 'Rewrite notes' : 'Write notes'}
-                    </button>
-                  )}
-                  {!isChat && (
-                    <button role="menuitem" onClick={() => (setMore(false), glint.send('window:open-followup', id))}>
-                      <Icon name="external" size={13} /> Open in a window
                     </button>
                   )}
                   <ConfirmButton label="Move to Trash" confirmLabel="Move to Trash"
