@@ -1,5 +1,5 @@
 import {
-  app, BrowserWindow, clipboard, desktopCapturer, dialog, ipcMain, Menu, nativeImage, net, powerMonitor, protocol, safeStorage,
+  app, BrowserWindow, clipboard, desktopCapturer, dialog, ipcMain, Menu, nativeImage, nativeTheme, net, powerMonitor, protocol, safeStorage,
   session as electronSession, shell, screen, systemPreferences, Tray, type IpcMainEvent, type IpcMainInvokeEvent, type MenuItemConstructorOptions,
 } from 'electron'
 import { spawn, type ChildProcess } from 'node:child_process'
@@ -8,7 +8,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { format } from 'node:util'
-import { askEffort, elapsedMs, formatElapsed, GHOST_FONT_RANGE, GHOST_OPACITY_RANGE, isLanguageCode, NOTE_MAX, phase, searchesFiles, type AskPayload, type KeyProvider, type Mode, type Perm, type Session, type ShortcutAction, type State } from '../shared/state'
+import { askEffort, elapsedMs, formatElapsed, GHOST_FONT_RANGE, GHOST_OPACITY_RANGE, isLanguageCode, nativeAccelerator, NOTE_MAX, phase, searchesFiles, type AskPayload, type KeyProvider, type Mode, type Perm, type Session, type ShortcutAction, type State } from '../shared/state'
 import { NAME_GUESS_SYSTEM_PROMPT, nameGuessContext, nameGuessQuestion, parseNameGuess, SAMPLE_CALL, systemPrompt } from '../shared/prompt'
 import { transcriptText } from '../shared/history'
 import { HUMANIZER_LABELS, HUMANIZERS, humanizes, type HumanizerConfig, type HumanizerService } from '../shared/humanize'
@@ -30,6 +30,7 @@ import { setGlass, type GlassRect } from './mac-panel'
 import { installedTerminals, runInTerminal } from './run'
 import { captureScreen } from './screenshot'
 import { updateShortcuts } from './shortcuts'
+import { POWERSHELL, psArgs } from './system'
 import { cancelQueuedUpdate, checkForUpdate, initUpdates, installUpdate } from './update'
 import { changedKeys, flushState, getState, initState, patchState, resetAllState, subscribe } from './state'
 import {
@@ -444,7 +445,7 @@ function registerIpc() {
   handle('calendar:status', () => calendarAccess())
   handle('calendar:allow', async () => {
     const access = await requestCalendar()
-    if (access === 'denied') void shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars')
+    if (access === 'denied' && isMac) void shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars')
     return access
   })
   on('session:stop', () => void stopSession())
@@ -488,7 +489,7 @@ function registerIpc() {
     draftFollowUp(String(id), (d) => !e.sender.isDestroyed() && e.sender.send('sessions:follow-up-partial', { id: String(id), ...d })))
   on('keys:request', () => {
     // The first time, macOS shows its own prompt; after a denial it only lists Glint, so open the right pane too.
-    if (!requestKeys()) void shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent')
+    if (isMac && !requestKeys()) void shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent')
   })
   handle('sessions:rename-speaker', (_e, id: string, speakerId: string, name: string) => renameSpeaker(String(id), String(speakerId), name))
   on('audio:mic', (_e, chunk: unknown) => {
@@ -761,8 +762,9 @@ function togglePause() {
 }
 
 function checkPermissions() {
-  if (!isMac) return patchState({ permissions: { mic: 'granted', screen: 'granted' } })
   const map = (st: string): Perm => (st === 'granted' ? 'granted' : st === 'not-determined' ? 'unknown' : 'denied')
+  // Windows has no screen permission; the mic one is the Privacy setting for all desktop apps.
+  if (!isMac) return patchState({ permissions: { mic: process.platform === 'win32' ? map(systemPreferences.getMediaAccessStatus('microphone')) : 'granted', screen: 'granted' } })
   patchState({
     permissions: {
       mic: map(systemPreferences.getMediaAccessStatus('microphone')),
@@ -777,6 +779,7 @@ const PRIVACY_PANE = {
 }
 
 async function requestPermission(kind: 'mic' | 'screen') {
+  if (process.platform === 'win32' && kind === 'mic') await shell.openExternal('ms-settings:privacy-microphone')
   if (!isMac) return
   if (kind === 'mic' && systemPreferences.getMediaAccessStatus('microphone') === 'not-determined') {
     await systemPreferences.askForMediaAccess('microphone')
@@ -848,19 +851,24 @@ const BLUE: [number, number, number] = [0xff, 0x8f, 0x7b] // #7b8fff
  * The menu bar item: a ring, with the timer beside it while a session runs, so recording shows even with the overlay
  * hidden; a solid red dot while something is failing. The menu is built when it opens, so its header is current.
  */
+// Windows doesn't tint template images, so its ring is drawn in the taskbar's own text colour.
+const WHITE: [number, number, number] = [0xff, 0xff, 0xff]
+const DARK: [number, number, number] = [0x20, 0x20, 0x20]
+const ring = () => (isMac ? dot(10, undefined, 2) : dot(14, nativeTheme.shouldUseDarkColorsForSystemIntegratedUI ? WHITE : DARK, 2))
+
 function updateTray(s: State) {
   const failing = !!(s.aiFailure ?? s.audioError)
   if (!tray) {
-    tray = new Tray(dot(10, undefined, 2))
+    tray = new Tray(ring())
     const open = () => tray?.popUpContextMenu(trayMenu(getState()))
     tray.on('click', open)
     tray.on('right-click', open)
+    nativeTheme.on('updated', () => !trayFailing && tray?.setImage(ring()))
   }
   if (failing !== trayFailing) {
     trayFailing = failing
-    tray.setImage(failing ? dot(10, RED) : dot(10, undefined, 2))
+    tray.setImage(failing ? dot(isMac ? 10 : 14, RED) : ring())
   }
-  tray.setToolTip(failing ? `Glint: ${s.aiFailure ?? s.audioError}` : 'Glint')
   const ticking = !!s.session && !s.pause.paused
   if (ticking && !trayClock) trayClock = setInterval(() => updateTrayTitle(getState()), 1000)
   if (!ticking && trayClock) (clearInterval(trayClock), (trayClock = undefined))
@@ -868,8 +876,11 @@ function updateTray(s: State) {
 }
 
 function updateTrayTitle(s: State) {
+  const failure = s.aiFailure ?? s.audioError
   const title = s.session ? ` ${formatElapsed(elapsedMs(s, Date.now()))}` : ''
-  if (title === trayTitle || !tray) return
+  // Windows has no title beside a tray icon, so the timer goes in its tooltip.
+  tray?.setToolTip(failure ? `Glint: ${failure}` : isMac || !title ? 'Glint' : `Glint · session${title}`)
+  if (title === trayTitle || !tray || !isMac) return
   trayTitle = title
   tray.setTitle(title, { fontType: 'monospacedDigit' })
 }
@@ -891,19 +902,21 @@ function trayMenu(s: State) {
   const failure = s.aiFailure ?? s.audioError
   const mode = s.modes.find((m) => m.id === s.activeModeId)?.name || 'General'
   // Shown beside the item; the shortcut itself is registered globally (shortcuts.ts), not by the menu.
-  const key = (a: ShortcutAction) => (s.shortcuts[a] ? { accelerator: s.shortcuts[a], registerAccelerator: false } : {})
+  const key = (a: ShortcutAction) => (s.shortcuts[a] ? { accelerator: nativeAccelerator(s.shortcuts[a], isMac), registerAccelerator: false } : {})
   const toggle = (label: string, on: boolean, click: () => void, rest: Partial<MenuItemConstructorOptions> = {}): MenuItemConstructorOptions =>
-    ({ label: `${on ? TICK : NO_TICK}${label}`, click, ...rest })
+    isMac ? { label: `${on ? TICK : NO_TICK}${label}`, click, ...rest } : { label, type: 'checkbox', checked: on, click, ...rest }
+  // Sublabels show only on macOS; elsewhere they join the label.
+  const sub = (label: string, sublabel?: string) => (isMac || !sublabel ? { label, sublabel } : { label: `${label} · ${sublabel}` })
   const layout = (l: State['layout']) => () => patchState({ layout: getState().layout === l ? 'full' : l, overlayVisible: true })
   const sep: MenuItemConstructorOptions = { type: 'separator' }
   const showPanel = () => patchState({ overlayVisible: true, chat: { visible: true } })
 
   return Menu.buildFromTemplate([
     // Status lines are enabled so macOS doesn't grey them; clicking one shows the panel.
-    ...(failure ? [{ label: s.aiFailure ? 'The AI is failing' : 'Audio stopped', sublabel: shorten(failure), icon: dot(7, RED), enabled: inApp, click: showPanel }] : []),
+    ...(failure ? [{ ...sub(s.aiFailure ? 'The AI is failing' : 'Audio stopped', shorten(failure, isMac ? 70 : 50)), icon: dot(7, RED), enabled: inApp, click: showPanel }] : []),
     live
-      ? { label: `${paused ? 'Session paused' : 'Session live'} · ${formatElapsed(elapsedMs(s, Date.now()))}`, sublabel: mode, icon: paused ? undefined : dot(7, RED), click: showPanel }
-      : { label: inApp ? 'No session' : 'Finish setting up Glint', sublabel: inApp ? mode : undefined, enabled: inApp, click: showPanel },
+      ? { ...sub(`${paused ? 'Session paused' : 'Session live'} · ${formatElapsed(elapsedMs(s, Date.now()))}`, mode), icon: paused ? undefined : dot(7, RED), click: showPanel }
+      : { ...sub(inApp ? 'No session' : 'Finish setting up Glint', inApp ? mode : undefined), enabled: inApp, click: showPanel },
     sep,
     { label: live ? 'End session' : 'Start session', enabled: inApp, click: toggleSession, ...key('toggleSession') },
     ...(live ? [{ label: paused ? 'Resume session' : 'Pause session', click: togglePause, ...key('togglePause') }] : []),
@@ -920,7 +933,7 @@ function trayMenu(s: State) {
     { label: 'Settings…', enabled: inApp, click: () => openSettings(), ...key('openSettings') },
     sep,
     { label: 'Restart Glint', click: () => relaunch(true) },
-    { label: 'Quit Glint', sublabel: live ? 'Ends the session' : undefined, click: () => app.quit() },
+    { ...sub('Quit Glint', live ? 'Ends the session' : undefined), click: () => app.quit() },
   ])
 }
 
@@ -957,9 +970,14 @@ let saying: ChildProcess | null = null
 function sayLine(i: number): Promise<void> {
   stopSaying()
   const line = SAMPLE_CALL[i]
-  if (!line || !isMac) return Promise.resolve()
+  if (!line || (!isMac && process.platform !== 'win32')) return Promise.resolve()
   return new Promise((resolve) => {
-    const p = spawn('/usr/bin/say', ['-r', '185', line.text])
+    const p = isMac
+      ? spawn('/usr/bin/say', ['-r', '185', line.text])
+      : spawn(POWERSHELL, psArgs('Add-Type -AssemblyName System.Speech; $s = New-Object System.Speech.Synthesis.SpeechSynthesizer; $s.Rate = 1; $s.Speak($env:GLINT_SAY)'), {
+          env: { ...process.env, GLINT_SAY: line.text },
+          windowsHide: true,
+        })
     saying = p
     p.on('close', () => resolve())
     p.on('error', () => resolve())

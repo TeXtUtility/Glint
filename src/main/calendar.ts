@@ -44,6 +44,7 @@ function run(argv) {
 }`
 
 function script(args: string[], timeout: number): Promise<string> {
+  if (process.platform !== 'darwin') return Promise.reject(new Error('calendars are read on macOS only'))
   return new Promise((resolve, reject) =>
     execFile('/usr/bin/osascript', ['-l', 'JavaScript', '-e', SCRIPT, ...args], { timeout }, (err, stdout) => (err ? reject(err) : resolve(stdout.trim()))),
   )

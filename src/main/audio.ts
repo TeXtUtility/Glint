@@ -15,6 +15,7 @@ import { getState, patchState, subscribe } from './state'
 import { loadLocalAsr, transcribeLocal, transcribeOpenAi, unloadLocalAsr } from './stt'
 import { embed, endVoiceSession, label, learnMe, loadVoiceModel, meScore, speakerChanges, unloadVoiceModel } from './voice'
 import { verbose } from './log'
+import { COMPUTER, isMac } from './system'
 import { downloadLiveWords, LIVE_WORDS_MB, liveAudio, liveEnd, liveStart, liveWanted, prepareLiveWords, stopLiveWords } from './live-words'
 
 const MODEL_PATH = path.join(app.isPackaged ? process.resourcesPath : app.getAppPath(), app.isPackaged ? '' : 'resources', 'silero_vad.onnx')
@@ -29,10 +30,12 @@ const OVERLAP_SHARE = 0.3
 const ECHO_TEXT_WAIT_MS = 2000
 const SHOW = { visible: true, expanded: true }
 /** Call audio that's exact silence for a minute while the user talks: macOS may be withholding it. */
-const CALL_BLOCKED =
-  "No sound from this Mac's audio for a minute. If the other side of the call is talking, macOS may be blocking Glint " +
-  'from hearing it: allow Glint in System Settings → Privacy & Security → Screen & System Audio Recording (Screen ' +
-  'Recording on macOS 14), then pause and resume.'
+const CALL_BLOCKED = isMac
+  ? "No sound from this Mac's audio for a minute. If the other side of the call is talking, macOS may be blocking Glint " +
+    'from hearing it: allow Glint in System Settings → Privacy & Security → Screen & System Audio Recording (Screen ' +
+    'Recording on macOS 14), then pause and resume.'
+  : "No sound from this PC's audio for a minute. If the other side of the call is talking, it may be playing on another " +
+    'device: make it the default output in Windows, then pause and resume.'
 const ROLES = ['me', 'them'] as const
 
 /** Bounded concurrency with a bounded queue. */
@@ -219,7 +222,7 @@ function enqueue(role: Role, samples: Float32Array) {
   if (p.queue.length > QUEUE_MAX) {
     p.queue.shift()
     if (++dropped === 1) {
-      patchState({ audioError: 'Glint fell more than 10 seconds behind and skipped some audio, so the transcript has a gap. Other heavy apps may be slowing this Mac down.', chat: SHOW })
+      patchState({ audioError: 'Glint fell more than 10 seconds behind and skipped some audio, so the transcript has a gap. Other heavy apps may be slowing this ' + COMPUTER + ' down.', chat: SHOW })
     }
     if (dropped % 20 === 1) console.warn(`[audio] ${role} processing is behind; dropped ${dropped} chunks so far`)
   }

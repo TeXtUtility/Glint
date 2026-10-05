@@ -14,6 +14,7 @@ import { speechModelFor, type LocalWhisper } from '../shared/state.ts'
 import { collapseRepeats, encodeWav } from './audio-core.ts' // extension lets plain Node run this for checks
 import createParakeet from './parakeet-worker?nodeWorker'
 import createWhisper from './whisper-worker?nodeWorker'
+import { TAR } from './system.ts'
 import { stopWorker } from './worker'
 
 /** Transcribes one line of 16 kHz mono speech. */
@@ -149,7 +150,7 @@ async function downloadSherpa(name: string, into: string, onProgress?: (pct: num
     )
     if (hash.digest('hex') !== SHERPA_SHA256[name]) throw new Error('the speech model download was corrupted')
     fs.mkdirSync(unpacked, { recursive: true })
-    await run('/usr/bin/tar', ['-xjf', archive, '-C', unpacked])
+    await run(TAR, ['-xjf', archive, '-C', unpacked])
     fs.rmSync(path.join(into, name), { recursive: true, force: true })
     fs.renameSync(path.join(unpacked, name), path.join(into, name))
   } finally {

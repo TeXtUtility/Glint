@@ -1,16 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
 import { SAMPLE_CALL, SAMPLE_CALL_S } from '../../shared/prompt'
 import { formatElapsed, prettyAccelerator, speechModelFor, type ShortcutAction, type State } from '../../shared/state'
-import { glint, isMac, patch, useAppState } from './glint'
+import { COMPUTER, glint, isMac, patch, SYSTEM_SETTINGS, useAppState } from './glint'
 import { Icon } from './icons'
 
-const PERMS = [
-  { kind: 'mic', icon: 'mic', name: 'Microphone', why: 'To transcribe what you say' },
-  {
-    kind: 'screen', icon: 'screen', name: 'Screen & system audio recording',
-    why: 'To hear the other side of the call and to see your screen when you ask. Glint restarts after you allow it.',
-  },
-] as const
+const PERMS = isMac
+  ? [
+      { kind: 'mic', icon: 'mic', name: 'Microphone', why: 'To transcribe what you say' },
+      {
+        kind: 'screen', icon: 'screen', name: 'Screen & system audio recording',
+        why: 'To hear the other side of the call and to see your screen when you ask. Glint restarts after you allow it.',
+      },
+    ] as const
+  : ([{ kind: 'mic', icon: 'mic', name: 'Microphone', why: 'To transcribe what you say. Windows turns it on for all desktop apps at once.' }] as const)
 
 type Step = 'welcome' | 'permissions' | 'demos'
 const STEP_LABELS: Record<Step, string> = { welcome: 'Welcome', permissions: 'Permissions', demos: 'Try it' }
@@ -26,9 +28,9 @@ export function Onboarding() {
 
   // Already onboarded but a permission was revoked, or back from the relaunch Screen Recording needs: start on
   // permissions.
-  const current = step ?? (s.onboardingDone || PERMS.some((p) => s.permissions[p.kind] === 'granted') ? 'permissions' : 'welcome')
+  const current = step ?? (s.onboardingDone || (isMac && PERMS.some((p) => s.permissions[p.kind] === 'granted')) ? 'permissions' : 'welcome')
   const only = s.onboardingDone // a revoked permission: nothing else to show
-  const steps: Step[] = only ? ['permissions'] : isMac ? ['welcome', 'permissions', 'demos'] : ['welcome', 'demos']
+  const steps: Step[] = only ? ['permissions'] : ['welcome', 'permissions', 'demos']
   const go = (to: Step) => (setDir(steps.indexOf(to) >= steps.indexOf(current) ? 1 : -1), setStep(to))
   const finish = () => {
     glint.send('practice:stop')
@@ -40,7 +42,7 @@ export function Onboarding() {
     <div className="ob">
       <Rail s={s} steps={steps} current={current} />
       <main className="ob-main" key={current} style={{ '--from': `${dir * 24}px` } as React.CSSProperties}>
-        {current === 'welcome' && <Welcome s={s} onNext={() => go(isMac ? 'permissions' : 'demos')} />}
+        {current === 'welcome' && <Welcome s={s} onNext={() => go('permissions')} />}
         {current === 'permissions' && (
           <Permissions s={s} speech={speech} onBack={only ? undefined : () => go('welcome')}
             onContinue={() => (only ? void patch({ onboardingDone: true }) : go('demos'))} />
@@ -74,7 +76,7 @@ function Rail({ s, steps, current }: { s: State; steps: Step[]; current: Step })
 }
 
 function Welcome({ s, onNext }: { s: State; onNext: () => void }) {
-  const ask = prettyAccelerator(s.shortcuts.ask, isMac) || '⌘↩'
+  const ask = prettyAccelerator(s.shortcuts.ask, isMac) || (isMac ? '⌘↩' : 'Ctrl+Enter')
   const cards = [
     { icon: 'wave', title: 'Hears both sides', body: 'You and the call are transcribed separately, and each speaker is labelled.' },
     { icon: 'logo', title: `Answers on ${ask}`, body: 'From any app, using your screen and what was just said.' },
@@ -86,7 +88,7 @@ function Welcome({ s, onNext }: { s: State; onNext: () => void }) {
         <h1 className="big">A second pair of ears for every call</h1>
         <p>
           Glint sits above whatever you're doing, keeps a live transcript of both sides, and answers when you press {ask}.
-          It runs on your Mac and talks only to the AI provider you choose.
+          It runs on your {COMPUTER} and talks only to the AI provider you choose.
         </p>
       </div>
       <div className="ob-cards">
@@ -121,8 +123,8 @@ function Permissions({ s, speech, onBack, onContinue }: {
   return (
     <div className="ob-page">
       <div className="ob-heading">
-        <h1>Let Glint hear the call and see your screen</h1>
-        <p>macOS asks for each of these once. Glint only listens during a session, and only takes a screenshot when you ask.</p>
+        <h1>{isMac ? 'Let Glint hear the call and see your screen' : 'Let Glint hear the call'}</h1>
+        <p>{isMac ? 'macOS asks for each of these once. ' : ''}Glint only listens during a session, and only takes a screenshot when you ask.</p>
       </div>
       <ul className="ob-perms">
         {PERMS.map((p) => {
@@ -134,7 +136,7 @@ function Permissions({ s, speech, onBack, onContinue }: {
               {ok ? <span className="allowed"><Icon name="checkCircle" />Allowed</span> : (
                 <button className="ob-action" disabled={next !== p}
                   onClick={() => (p.kind === 'screen' && setAskedScreen(true), void glint.invoke('permissions:request', p.kind))}>
-                  Open System Settings
+                  Open {SYSTEM_SETTINGS}
                 </button>
               )}
             </li>

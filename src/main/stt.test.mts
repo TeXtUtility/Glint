@@ -7,6 +7,7 @@ import path from 'node:path'
 import { after, mock, test } from 'node:test'
 import { workers } from '../test/node-worker.ts'
 import { fetchSherpaModel, loadLocalAsr, SHERPA_SHA256, unloadLocalAsr } from './stt.ts'
+import { TAR } from './system.ts'
 
 const FILES = ['encoder.int8.onnx', 'decoder.int8.onnx', 'joiner.int8.onnx', 'tokens.txt']
 const PARAKEET = 'sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8'
@@ -19,7 +20,7 @@ function pack(name: string): Buffer {
   const src = folder()
   fs.mkdirSync(path.join(src, name))
   for (const f of FILES) fs.writeFileSync(path.join(src, name, f), f)
-  execFileSync('/usr/bin/tar', ['-cjf', path.join(src, 'pkg.tar.bz2'), '-C', src, name])
+  execFileSync(TAR, ['-cjf', path.join(src, 'pkg.tar.bz2'), '-C', src, name])
   return fs.readFileSync(path.join(src, 'pkg.tar.bz2'))
 }
 

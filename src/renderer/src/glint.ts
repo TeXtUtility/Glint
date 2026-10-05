@@ -29,6 +29,12 @@ export const glint: GlintBridge = {
 // Main forwards its own errors so they show up in each window's DevTools console.
 glint.on('app:error', (msg: string) => console.error('[main]', msg))
 export const isMac = glint.platform === 'darwin'
+/** As in "on this Mac". */
+export const COMPUTER = isMac ? 'Mac' : 'PC'
+export const OS = isMac ? 'macOS' : 'Windows'
+export const SYSTEM_SETTINGS = isMac ? 'System Settings' : 'Windows Settings'
+export const ENCRYPTED = isMac ? 'encrypted with your keychain' : 'encrypted for your Windows account'
+export const KEY_GONE = isMac ? 'the keychain key that protected it is gone' : "Windows can't unlock it anymore"
 
 type DeepPartial<T> = { [K in keyof T]?: T[K] extends object ? Partial<T[K]> : T[K] }
 export const patch = (p: DeepPartial<State>) => glint.invoke('state:patch', p)

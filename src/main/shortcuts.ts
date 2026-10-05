@@ -1,5 +1,5 @@
 import { globalShortcut } from 'electron'
-import { inCorner, phase, type ShortcutAction, type State } from '../shared/state'
+import { inCorner, nativeAccelerator, phase, type ShortcutAction, type State } from '../shared/state'
 import { patchState } from './state'
 
 // Most shortcuts are registered only while what they act on is on screen, so they don't take those keys from every
@@ -59,8 +59,8 @@ export function updateShortcuts(s: State, run: (action: ShortcutAction) => void)
     for (const [action, acc] of active) {
       let ok = false
       try {
-        ok = globalShortcut.register(acc, () => run(action))
-        if (!ok) console.warn(`[shortcuts] ${acc} is taken by another app, or macOS refuses it`)
+        ok = globalShortcut.register(nativeAccelerator(acc, process.platform === 'darwin'), () => run(action))
+        if (!ok) console.warn(`[shortcuts] ${acc} is taken by another app, or the system refuses it`)
       } catch (err) {
         console.warn(`[shortcuts] invalid accelerator ${acc}:`, err)
       }

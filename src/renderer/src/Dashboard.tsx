@@ -3,7 +3,7 @@ import {
   isChatId, lineLabel, ownerName, renamed, sessionPeople, transcriptText, type ActionItem, type SavedSession, type SessionSummary,
 } from '../../shared/history'
 import { elapsedMs, formatElapsed, type State } from '../../shared/state'
-import { glint, useTick } from './glint'
+import { glint, isMac, useTick } from './glint'
 import { Icon } from './icons'
 import { Markdown } from './Markdown'
 import { ConfirmButton, Presence, Segmented } from './ui'
@@ -93,7 +93,7 @@ export function Dashboard({ s, openId, setOpenId, onContinue }: {
       {unreadable > 0 && (
         <p className="muted">
           {unreadable === 1 ? '1 saved session' : `${unreadable} saved sessions`} can't be opened: damaged, or encrypted with a
-          keychain key this Mac no longer has. The files are still in Glint's sessions folder.
+          {isMac ? 'keychain key this Mac no longer has' : "Windows account key that can't unlock them anymore"}. The files are still in Glint's sessions folder.
         </p>
       )}
       {list && !days.length && (

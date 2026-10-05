@@ -15,6 +15,7 @@ import type { Session, State } from '../shared/state'
 import { complete } from './ai'
 import { failureLine, humanize } from './humanize'
 import { getState, patchState, subscribe } from './state'
+import { COMPUTER, isMac } from './system'
 
 const SAVE_EVERY_MS = 10_000
 const NOTES_DELAY_MS = 1500 // lets the chat panel's final messages land first
@@ -133,7 +134,7 @@ export function loadSession(id: string): SavedSession {
   try {
     json = safeStorage.decryptString(data)
   } catch {
-    throw new Error('it was encrypted with a keychain key this Mac no longer has')
+    throw new Error(isMac ? 'it was encrypted with a keychain key this Mac no longer has' : "it was encrypted for a Windows account that can't unlock it anymore")
   }
   const r = parseRecord(json)
   // "processing" left on disk by a quit before or during generation: it's failed, and can be retried.
@@ -338,7 +339,7 @@ export async function generateNotes(id: string) {
     // Cut off by the Mac sleeping (the lid closing): written again once it's awake, not left failed.
     const slept = sleptAt >= started
     const cur = tryLoad(id)
-    if (cur) write({ ...cur, notesStatus: 'failed', notesError: slept ? 'the Mac went to sleep while they were being written; trying again once it\'s awake' : (err as Error).message })
+    if (cur) write({ ...cur, notesStatus: 'failed', notesError: slept ? `the ${COMPUTER} went to sleep while they were being written; trying again once it's awake` : (err as Error).message })
     if (slept && cur) retryAfterWake(id)
   } finally {
     generating.delete(id)

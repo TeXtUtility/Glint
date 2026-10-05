@@ -13,6 +13,7 @@ import { cliModelFor, failureSummary, providerOrder, tryInOrder, type Failure } 
 import type { AiProvider, AskPayload, KeyProvider, KeyStatus, State } from '../shared/state'
 import { getState, patchState } from './state'
 import { verbose } from './log'
+import { POWERSHELL, psArgs } from './system'
 
 type OnDelta = (text: string) => void
 /** Token counts for one call, where the provider reports them (the CLIs don't). */
@@ -160,7 +161,7 @@ export function getKey(provider: KeyProvider | 'humanizer'): string | undefined 
     return safeStorage.decryptString(Buffer.from(enc, 'base64'))
   } catch {
     const name = provider === 'anthropic' ? 'Claude' : provider === 'openai' ? 'OpenAI' : 'humanizer'
-    throw new Error(`Your saved ${name} API key can't be read anymore (the keychain key that protected it is gone). Paste it again in Settings → AI.`)
+    throw new Error(`Your saved ${name} API key can't be read anymore (${process.platform === 'darwin' ? 'the keychain key that protected it is gone' : "Windows can't unlock it"}). Paste it again in Settings → AI.`)
   }
 }
 
@@ -339,6 +340,7 @@ let loginPath: Promise<string> | null = null
 
 /** Apps launched from Finder get a bare PATH; borrow the login shell's so ~/.local/bin, Homebrew, nvm etc. resolve. */
 export function shellPath(): Promise<string> {
+  if (process.platform === 'win32') return (loginPath ??= windowsPath())
   return (loginPath ??= new Promise((resolve) => {
     // printenv, not $PATH: fish joins its PATH list with spaces. Last line: profile scripts may print a greeting first.
     execFile(process.env.SHELL || '/bin/zsh', ['-lc', '/usr/bin/printenv PATH'], { timeout: 5000 }, (err, out) => {
@@ -349,6 +351,35 @@ export function shellPath(): Promise<string> {
   }))
 }
 
+/** The saved PATH too, so a CLI installed since Glint started is found. */
+function windowsPath(): Promise<string> {
+  const script = "[Environment]::GetEnvironmentVariable('Path','User') + ';' + [Environment]::GetEnvironmentVariable('Path','Machine')"
+  return new Promise((resolve) => {
+    execFile(POWERSHELL, psArgs(script), { timeout: 5000, windowsHide: true }, (err, out) => {
+      const dirs = [path.join(os.homedir(), '.local', 'bin'), ...(process.env.PATH ?? '').split(';'), ...(err ? [] : out.trim().split(';'))]
+      resolve([...new Set(dirs.filter(Boolean))].join(';'))
+    })
+  })
+}
+
+/**
+ * A CLI's program and leading arguments. npm installs a .cmd launcher on Windows, which only cmd.exe runs, and its
+ * quoting mangles JSON and empty arguments, so the script the launcher points at runs with node instead.
+ */
+async function cliCommand(name: string, PATH: string): Promise<[string, string[]]> {
+  if (process.platform !== 'win32') return [name, []]
+  for (const dir of PATH.split(';')) {
+    if (fs.existsSync(path.join(dir, `${name}.exe`))) return [path.join(dir, `${name}.exe`), []]
+    const launcher = path.join(dir, `${name}.cmd`)
+    if (!fs.existsSync(launcher)) continue
+    const script = /"%dp0%\\([^"]+)"\s+%\*/.exec(await fs.promises.readFile(launcher, 'utf8'))?.[1]
+    if (!script) continue
+    const node = path.join(dir, 'node.exe')
+    return [fs.existsSync(node) ? node : 'node', [path.join(dir, script)]]
+  }
+  return [name, []]
+}
+
 /**
  * What the CLI itself says about its sign-in. Its login is separate from the Claude or ChatGPT app's, so the app
  * being signed in says nothing about whether the CLI Glint runs is.
@@ -356,10 +387,11 @@ export function shellPath(): Promise<string> {
 export async function cliStatus(provider: 'claude-cli' | 'codex-cli'): Promise<{ ok: boolean; detail: string }> {
   const PATH = await shellPath()
   const [cmd, args] = provider === 'claude-cli' ? ['claude', ['auth', 'status']] : ['codex', ['login', 'status']]
-  const signIn = provider === 'claude-cli' ? 'Run `claude auth login` in Terminal.' : 'Run `codex login` in Terminal.'
+  const signIn = provider === 'claude-cli' ? 'Run `claude auth login` in a terminal.' : 'Run `codex login` in a terminal.'
+  const [file, lead] = await cliCommand(cmd, PATH)
   return new Promise((resolve) => {
     // Exits non-zero when signed out, so read the output either way.
-    execFile(cmd, args, { env: { ...process.env, PATH }, timeout: 15_000 }, (err, stdout, stderr) => {
+    execFile(file, [...lead, ...args], { env: { ...process.env, PATH }, timeout: 15_000, windowsHide: true }, (err, stdout, stderr) => {
       if ((err as NodeJS.ErrnoException | null)?.code === 'ENOENT') return resolve({ ok: false, detail: `The \`${cmd}\` command isn't installed.` })
       if (provider === 'claude-cli') {
         try {
@@ -402,7 +434,8 @@ async function runCli(
   try {
     for (const [name, data] of Object.entries(opts.files ?? {})) await fs.promises.writeFile(path.join(dir, name), data)
     const env = { ...process.env, PATH, ...(opts.env ? await opts.env(dir) : {}) }
-    const child = spawn(name, args(dir), { cwd: dir, env, signal }) // spawn searches env.PATH
+    const [file, lead] = await cliCommand(name, PATH)
+    const child = spawn(file, [...lead, ...args(dir)], { cwd: dir, env, signal, windowsHide: true }) // spawn searches env.PATH
     child.stdin.on('error', () => {}) // EPIPE when it exits before reading everything; its exit code reports why
     child.stdin.end(stdin)
     let stderr = ''
@@ -473,7 +506,8 @@ async function startClaude(args: string[], system: string, key: string, busy = f
   const PATH = await shellPath()
   const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), TEMP_PREFIX))
   await fs.promises.writeFile(path.join(dir, 'system.txt'), system)
-  const child = spawn('claude', args, { cwd: dir, env: { ...process.env, PATH } }) // spawn searches env.PATH
+  const [file, lead] = await cliCommand('claude', PATH)
+  const child = spawn(file, [...lead, ...args], { cwd: dir, env: { ...process.env, PATH }, windowsHide: true }) // spawn searches env.PATH
   verbose(`[ai] Claude Code process started (${warm.length + 1} running)`)
   const w: Warm = { key, child, replies: [], busy, usedAt: Date.now(), onLine: null, stderr: '', exited: Promise.resolve(null), dead: false, passages: 0 }
   child.stderr.on('data', (d) => (w.stderr = (w.stderr + d).slice(-4000)))

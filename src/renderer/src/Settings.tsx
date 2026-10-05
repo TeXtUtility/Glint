@@ -9,7 +9,7 @@ import {
 } from '../../shared/state'
 import notes from '../../../CHANGELOG.md?raw'
 import { CapsuleItemView, languageOptions } from './ControlBar'
-import { glint, isMac, patch, useAppState } from './glint'
+import { COMPUTER, ENCRYPTED, glint, isMac, KEY_GONE, OS, patch, useAppState } from './glint'
 import { Icon } from './icons'
 import { MIC_CONSTRAINTS, startRecording, usePlayback, type Recording } from './mic'
 import { ConfirmButton, DraftTextarea, Segmented } from './ui'
@@ -179,12 +179,14 @@ function General({ s, onReleaseNotes }: { s: State; onReleaseNotes: () => void }
         </Row>
         {s.layout === 'ghost' && (
           <Row label="Follow my typing"
-            hint="Ghost moves along as you type the answer in any app, so macOS asks to let Glint see keystrokes (Input Monitoring). Keys only move the strip: they're never saved or sent anywhere, and password fields are never seen.">
+            hint={isMac
+              ? "Ghost moves along as you type the answer in any app, so macOS asks to let Glint see keystrokes (Input Monitoring). Keys only move the strip: they're never saved or sent anywhere, and password fields are never seen."
+              : "Ghost moves along as you type the answer in any app, so Glint sees keystrokes while Ghost is on screen. Keys only move the strip: they're never saved or sent anywhere. Windows doesn't hide password fields from it, so hide Ghost before typing one."}>
             {s.keysAllowed ? <span className="muted">Allowed</span> : <button onClick={() => glint.send('keys:request')}>Allow</button>}
           </Row>
         )}
         <Toggle label="Offer to take notes when a call starts"
-          hint="When Zoom, Teams, Webex, FaceTime, Slack or a Meet, Teams or Zoom tab starts using your mic, a small prompt under the capsule offers to start a session. Glint sees which app uses the mic, never the audio."
+          hint={`When Zoom, Teams, Webex, ${isMac ? 'FaceTime, ' : ''}Slack or a Meet, Teams or Zoom tab starts using your mic, a small prompt under the capsule offers to start a session. Glint sees which app uses the mic, never the audio.`}
           checked={s.meetingPrompt} onChange={(v) => patch({ meetingPrompt: v })} />
         <Toggle label="Ghost skips ahead when you go off script"
           hint={`Skip, swap or add a word, or click into the next field, and Ghost jumps to where you are. Off, it only moves on the right key${
@@ -240,7 +242,7 @@ function General({ s, onReleaseNotes }: { s: State; onReleaseNotes: () => void }
         </div>
       </Section>
 
-      <Section title="Mac">
+      <Section title={COMPUTER}>
         <Row label="Theme" hint="For Settings; the overlay is always dark">
           <Segmented<State['theme']> label="Theme" value={s.theme} onChange={(theme) => patch({ theme })}
             options={[{ value: 'system', label: 'System' }, { value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }]} />
@@ -647,7 +649,7 @@ function Humanize({ s }: { s: State }) {
   const account = [label, acct?.plan, acct?.wordsLeft !== undefined && `${acct.wordsLeft.toLocaleString()} words left`, acct?.maxPerCall && `${acct.maxPerCall.toLocaleString()} per call`]
   return (
     <Section title="Humanize answers">
-      <Row label={<span className="hz-title"><Icon name="person" size={14} />{account.filter(Boolean).join(' · ')}</span>} hint="Key saved, encrypted with your keychain.">
+      <Row label={<span className="hz-title"><Icon name="person" size={14} />{account.filter(Boolean).join(' · ')}</span>} hint={`Key saved, ${ENCRYPTED}.`}>
         <button className="text" onClick={() => setConnecting(true)}>Change</button>
         <ConfirmButton quiet label="Disconnect" confirmLabel="Hold to disconnect" onConfirm={() => void glint.invoke('humanizer:disconnect')} />
       </Row>
@@ -717,7 +719,7 @@ function HumanizerConnect({ s, onClose }: { s: State; onClose: () => void }) {
           {HUMANIZERS.map((x) => <option key={x} value={x}>{x === 'custom' ? 'Custom' : HUMANIZER_LABELS[x]}</option>)}
         </select>
       </Row>
-      <Row as="label" label="API key" hint={service === 'custom' ? `Sent as the ${custom.header || 'header'} value, so include "Bearer " if the service wants it.` : 'Encrypted with your keychain, and never shown again.'}>
+      <Row as="label" label="API key" hint={service === 'custom' ? `Sent as the ${custom.header || 'header'} value, so include "Bearer " if the service wants it.` : `${ENCRYPTED[0].toUpperCase()}${ENCRYPTED.slice(1)}, and never shown again.`}>
         <input type="password" autoComplete="off" spellCheck={false} placeholder={service === 'emulate' ? 'ak_live_…' : 'Paste key'} value={key} onChange={(e) => edit(setKey)(e.target.value)} />
       </Row>
       {Object.entries(fields).map(([name, values]) => (
@@ -775,7 +777,7 @@ function KeyField({ provider, status }: { provider: KeyProvider; status: State['
       setError((err as Error).message)
     }
   }
-  const text = { none: 'No key saved.', saved: 'Key saved, encrypted with your keychain.', unreadable: "A key is saved but can't be read: the keychain key that protected it is gone. Paste it again." }[status]
+  const text = { none: 'No key saved.', saved: `Key saved, ${ENCRYPTED}.`, unreadable: `A key is saved but can't be read: ${KEY_GONE}. Paste it again.` }[status]
   return (
     <>
       <small className={status === 'unreadable' ? 'error' : ''}>
@@ -850,9 +852,9 @@ function Transcription({ s }: { s: State }) {
   const progress = /(\d+)%/.exec(s.sttStatus ?? '')?.[1]
   return (
     <Section title="Transcription">
-      <Row label="Engine" hint={t.engine === 'local' ? 'On this Mac keeps audio on the device. English uses Parakeet v2, 24 other European languages Parakeet v3, the rest Whisper.' : `Billed per minute of speech. ${s.aiKeys.openai === 'saved' ? 'Uses your saved OpenAI key.' : 'Needs an OpenAI key (above).'}`}>
+      <Row label="Engine" hint={t.engine === 'local' ? `On this ${COMPUTER} keeps audio on the device. English uses Parakeet v2, 24 other European languages Parakeet v3, the rest Whisper.` : `Billed per minute of speech. ${s.aiKeys.openai === 'saved' ? 'Uses your saved OpenAI key.' : 'Needs an OpenAI key (above).'}`}>
         <Segmented label="Transcription engine" value={t.engine} onChange={(engine) => setT({ engine })}
-          options={[{ value: 'local', label: 'On this Mac' }, { value: 'openai', label: 'OpenAI' }]} />
+          options={[{ value: 'local', label: `On this ${COMPUTER}` }, { value: 'openai', label: 'OpenAI' }]} />
       </Row>
       {t.engine === 'local' ? (
         <Row as="label" label="Whisper model" hint={progress ? (
@@ -890,7 +892,7 @@ function ModelStorage({ s }: { s: State }) {
   useEffect(() => void glint.invoke<{ total: number; unused: number }>('models:usage').then(setUse), [s.transcription, idle])
   if (!use?.total) return null
   return (
-    <Row label="Models on this Mac" hint={use.unused ? `${sizeLabel(use.unused)} of it is for languages or features you aren't using. Removed models download again if you need them.` : 'All in use by your current settings.'}>
+    <Row label={`Models on this ${COMPUTER}`} hint={use.unused ? `${sizeLabel(use.unused)} of it is for languages or features you aren't using. Removed models download again if you need them.` : 'All in use by your current settings.'}>
       <span className="storage">
         {sizeLabel(use.total)}
         <button disabled={!use.unused || !!s.session || !idle} data-tip={s.session ? 'Not during a session' : !idle ? 'After the download finishes' : undefined}
@@ -1095,7 +1097,7 @@ function ModeFiles({ mode, jobs }: { mode: Mode; jobs: State['modeFileJobs'] }) 
             <li key={j.id} className="reading">
               <span className={`ficon ${fileKind(j.name)}`}><Icon name={fileIcon(j.name)} /></span>
               <span className="row-text">{j.name}
-                <span className="ocr"><span className="track"><i style={{ width: `${(j.done / Math.max(1, j.total)) * 100}%` }} /></span>Reading text with macOS text recognition…</span>
+                <span className="ocr"><span className="track"><i style={{ width: `${(j.done / Math.max(1, j.total)) * 100}%` }} /></span>Reading text with {OS} text recognition…</span>
               </span>
               <button className="text" disabled>Remove</button>
             </li>
@@ -1108,7 +1110,7 @@ function ModeFiles({ mode, jobs }: { mode: Mode; jobs: State['modeFileJobs'] }) 
           ? `Too big to send whole: Glint searches these files for each question and sends the passages that match (${files.length} ${files.length === 1 ? 'file' : 'files'}, about ${words(total)}). Questions about a file as a whole may miss parts.`
           : files.length > 0
           ? `PDF, Word, Markdown, text, EPUB or images · ${files.length} ${files.length === 1 ? 'file' : 'files'}, about ${words(total)} with each ask. Large files can slow the first words.`
-          : 'PDF, Word, Markdown, text, EPUB or images. Scans and pictures are read with text recognition, and the text is stored encrypted on this Mac.'}
+          : `PDF, Word, Markdown, text, EPUB or images. Scans and pictures are read with text recognition, and the text is stored encrypted on this ${COMPUTER}.`}
       </small>
     </div>
   )
@@ -1147,14 +1149,14 @@ function Voice({ s }: { s: State }) {
   return (
     <>
       <p className="muted intro">
-        Glint tells voices apart on this Mac: you from the call playing through your speakers, and other people from each other.
-        Voices are stored on this Mac, encrypted with your keychain. {model}
+        Glint tells voices apart on this {COMPUTER}: you from the call playing through your speakers, and other people from each other.
+        Voices are stored on this {COMPUTER}, {ENCRYPTED}. {model}
       </p>
       <Enroll s={s} player={player} />
       <Toggle label="Room mode" checked={s.roomMode && s.voiceprint === 'enrolled'} disabled={s.voiceprint !== 'enrolled'} onChange={(v) => patch({ roomMode: v })}
-        hint={<>For meetings in person, where one mic hears everyone: your voice tells you apart. {s.voiceprint !== 'enrolled' ? 'Record your voice first.' : 'If macOS Mic Mode is Voice Isolation, other people get filtered out; set it to Standard.'}</>} />
+        hint={<>For meetings in person, where one mic hears everyone: your voice tells you apart. {s.voiceprint !== 'enrolled' ? 'Record your voice first.' : isMac ? 'If macOS Mic Mode is Voice Isolation, other people get filtered out; set it to Standard.' : 'If Windows Studio Effects has voice focus on, other people get filtered out; turn it off.'}</>} />
       <Toggle label="Speaker labels" hint={'Split "Them" into named people · also on the overlay'} checked={s.speakerLabels} onChange={(v) => patch({ speakerLabels: v })} />
-      <CalendarRow />
+      {isMac && <CalendarRow />}
 
       <Section title={`People Glint knows · ${s.people.length}`} aside={<small>Save a voice only with that person's agreement</small>}>
         {s.people.length ? s.people.map((p) => <PersonRow key={p.id} p={p} player={player} />) : (
@@ -1245,7 +1247,7 @@ function Enroll({ s, player }: { s: State; player: Player }) {
   const enough = seconds >= ENROLL_MIN_S
   const clock = (n: number) => `0:${String(Math.floor(n)).padStart(2, '0')}`
   const status = s.voiceprint === 'unreadable'
-    ? <span className="error">Saved voices can't be read anymore: the keychain key that protected them is gone. Record your voice again; saved people need saving again too.</span>
+    ? <span className="error">Saved voices can't be read anymore: {KEY_GONE}. Record your voice again; saved people need saving again too.</span>
     : s.voiceprint === 'enrolled' ? `Recorded${s.voiceprintSeconds ? ` ${s.voiceprintSeconds} s` : ''} · room mode is available` : 'Not recorded yet · needed for room mode'
   return (
     <div className="voice-card">
@@ -1406,7 +1408,7 @@ function Shortcuts({ s }: { s: State }) {
       if (acc === null) return
       if (acc === 'no-modifier') {
         const why = e.altKey ? ": macOS won't give ⌥ alone to an app, and it types accents" : ''
-        return setNote({ action, text: isMac ? `Include ⌘ or ⌃${why}.` : 'Include Ctrl or Alt.' })
+        return setNote({ action, text: isMac ? `Include ⌘ or ⌃${why}.` : 'Include Ctrl, Win or Alt.' })
       }
       if (isSystemShortcut(acc, isMac)) return setNote({ action, text: 'Used by macOS in every app.' })
       const owner = ownerOf(acc, action)
@@ -1435,7 +1437,7 @@ function Shortcuts({ s }: { s: State }) {
 
   const row = (a: ShortcutAction) => (
     <Row key={a} blank={!shortcuts[a] && recording !== a} label={LABELS[a]} hint={note?.action === a ? note.text
-      : s.shortcutFailures.includes(a) ? <span className="error">Not working: another app has these keys, or macOS refuses them</span>
+      : s.shortcutFailures.includes(a) ? <span className="error">Not working: another app has these keys, or {OS} refuses them</span>
       : a.startsWith('move') ? 'Only while Glint is on screen' : undefined}>
       <button className={`keycap ${recording === a ? 'recording' : ''} ${shortcuts[a] ? '' : 'unset'}`}
         onClick={() => (setNote(null), setRecording(a))} onDoubleClick={() => restoreDefault(a)}>
@@ -1521,7 +1523,7 @@ function About({ s }: { s: State }) {
           <small>{[commit, s.systemInfo].filter(Boolean).join(' · ')}</small>
         </span>
       </div>
-      <button className="copy-info" data-tip="Copies Glint's version and your Mac's details, to paste into a bug report" onClick={() => glint.send('app:copy', info)}>
+      <button className="copy-info" data-tip={`Copies Glint's version and your ${COMPUTER}'s details, to paste into a bug report`} onClick={() => glint.send('app:copy', info)}>
         <Icon name="copy" size={15} />Copy system info
       </button>
       <Section title="Troubleshooting">

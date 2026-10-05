@@ -34,7 +34,10 @@ let panelH = 60
 
 type Name = 'controlBar' | 'chat' | 'onboarding' | 'settings' | 'followup'
 /** Settings and onboarding on macOS: no title bar or title, the window buttons inset over the page (styles.css). */
-const CHROMELESS: BrowserWindowConstructorOptions = isMac ? { titleBarStyle: 'hiddenInset' } : {}
+const CHROMELESS = (name: Name): BrowserWindowConstructorOptions =>
+  isMac ? { titleBarStyle: 'hiddenInset' } : { titleBarStyle: 'hidden', titleBarOverlay: captionButtons(name) }
+const captionButtons = (name: Name) =>
+  ({ color: '#00000000', symbolColor: name === 'followup' || nativeTheme.shouldUseDarkColors ? '#ececf1' : '#1b1c23', height: 36 })
 const wins: Partial<Record<Name, BrowserWindow>> = {}
 export const getWin = (name: Name) => wins[name]
 
@@ -152,11 +155,14 @@ export const painted = (webContentsId: number) => painting.get(webContentsId)?.(
 
 export function updateWindows(s: State) {
   if (quitting) return // a state change while quitting mustn't recreate an overlay that just closed
-  if (nativeTheme.themeSource !== s.theme) nativeTheme.themeSource = s.theme // each set repaints every window
+  if (nativeTheme.themeSource !== s.theme) {
+    nativeTheme.themeSource = s.theme // each set repaints every window
+    if (!isMac) for (const n of ['settings', 'onboarding'] as const) wins[n]?.setTitleBarOverlay(captionButtons(n))
+  }
   const inApp = phase(s) === 'app'
 
   if (!inApp && !wins.onboarding) {
-    const w = create('onboarding', { width: 1100, height: 720, minWidth: 760, minHeight: 560, ...CHROMELESS })
+    const w = create('onboarding', { width: 1100, height: 720, minWidth: 760, minHeight: 560, ...CHROMELESS('onboarding') })
     w.on('close', () => app.quit()) // user closed it; destroy() doesn't emit 'close'
     w.once('ready-to-show', () => bringToFront(w))
   }
@@ -513,7 +519,7 @@ export function openFollowUp(id?: unknown) {
     bringToFront(existing)
     return
   }
-  const w = create('followup', { width: 920, height: 640, minWidth: 760, minHeight: 480, ...CHROMELESS }, sid ? `?id=${sid}` : '')
+  const w = create('followup', { width: 920, height: 640, minWidth: 760, minHeight: 480, ...CHROMELESS('followup') }, sid ? `?id=${sid}` : '')
   w.once('ready-to-show', () => bringToFront(w))
 }
 
@@ -526,7 +532,7 @@ export function openSettings(page?: unknown) {
     bringToFront(existing)
     return
   }
-  const w = create('settings', { width: 920, height: 670, minWidth: 760, minHeight: 480, ...CHROMELESS }, p ? `?page=${p}` : '')
+  const w = create('settings', { width: 920, height: 670, minWidth: 760, minHeight: 480, ...CHROMELESS('settings') }, p ? `?page=${p}` : '')
   w.once('ready-to-show', () => bringToFront(w))
   // Closing mid-recording skips the page's cleanup; without this every global hotkey stays off until relaunch.
   w.on('closed', () => patchState({ isRecordingShortcut: false }))

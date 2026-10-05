@@ -676,6 +676,11 @@ const CODE_KEYS: Record<string, string> = {
 
 export interface KeyLike { code: string; metaKey: boolean; ctrlKey: boolean; altKey: boolean; shiftKey: boolean }
 
+/** Shortcuts are stored as on a Mac. Elsewhere ⌘ is Ctrl and the Win key stands in for ⌃, so ⌃⌘\ doesn't become ⌘\. */
+export function nativeAccelerator(acc: string, isMac: boolean): string {
+  return isMac ? acc : acc.split('+').map((p) => (p === 'Control' ? 'Super' : p)).join('+')
+}
+
 /** null = modifier-only press; 'no-modifier' = rejected (on a Mac, anything without ⌘ or ⌃). */
 export function toAccelerator(e: KeyLike, isMac: boolean): string | null | 'no-modifier' {
   let key: string | undefined = CODE_KEYS[e.code]
@@ -685,8 +690,7 @@ export function toAccelerator(e: KeyLike, isMac: boolean): string | null | 'no-m
   if (!key) return null
   const mods: string[] = []
   if (isMac ? e.metaKey : e.ctrlKey) mods.push('CommandOrControl')
-  if (isMac && e.ctrlKey) mods.push('Control')
-  if (!isMac && e.metaKey) mods.push('Super')
+  if (isMac ? e.ctrlKey : e.metaKey) mods.push('Control')
   if (e.altKey) mods.push('Alt')
   if (e.shiftKey) mods.push('Shift')
   // macOS 15 won't register ⌥ or ⌥⇧ alone, and taking them would break the accents ⌥ types in every app.
@@ -703,11 +707,11 @@ export const isSystemShortcut = (acc: string, isMac: boolean) => isMac && MAC_SY
 export function prettyAccelerator(acc: string, isMac: boolean): string {
   const map: Record<string, string> = isMac
     ? { CommandOrControl: '⌘', Control: '⌃', Alt: '⌥', Shift: '⇧', Up: '↑', Down: '↓', Left: '←', Right: '→', Enter: '↩' }
-    : { CommandOrControl: 'Ctrl', Super: 'Win', Up: '↑', Down: '↓', Left: '←', Right: '→' }
+    : { CommandOrControl: 'Ctrl', Control: 'Win', Super: 'Win', Up: '↑', Down: '↓', Left: '←', Right: '→' }
   const parts = acc.split('+')
   // macOS writes modifiers in a fixed order, ⌃⌥⇧⌘, whatever order the accelerator lists them in.
-  const MAC_ORDER = ['Control', 'Alt', 'Shift', 'CommandOrControl']
-  if (isMac) parts.sort((a, b) => (MAC_ORDER.indexOf(a) + 1 || 99) - (MAC_ORDER.indexOf(b) + 1 || 99))
+  const ORDER = isMac ? ['Control', 'Alt', 'Shift', 'CommandOrControl'] : ['CommandOrControl', 'Control', 'Super', 'Alt', 'Shift']
+  parts.sort((a, b) => (ORDER.indexOf(a) + 1 || 99) - (ORDER.indexOf(b) + 1 || 99))
   return parts.map((p) => map[p] ?? p).join(isMac ? '' : '+')
 }
 
@@ -730,7 +734,7 @@ export function ghostHints(sc: Record<ShortcutAction, string>, isMac: boolean): 
     ...pair('ghostBack', 'ghostSkip', 'back or skip a word', ['back a word', 'skip a word']),
     ...pair('ghostFadeIn', 'ghostFadeOut', 'fade', ['less faded', 'more faded']),
     ...pair('ghostBigger', 'ghostSmaller', 'text size', ['bigger text', 'smaller text']),
-    k('ghostHide') && `${k('ghostHide')} or double-tap ⌃ hides`,
+    k('ghostHide') && `${k('ghostHide')} or double-tap ${isMac ? '⌃' : 'Ctrl'} hides`,
     `drag to move${k('ghostCorner') && `, ${k('ghostCorner')} back to the corner`}`,
   ].filter(Boolean)
 }
