@@ -48,7 +48,7 @@ test('flushState: writes a private temp file and renames it over state.json, eve
   assert.equal(writes.mock.calls[0].arguments[0], `${file}.tmp`)
   assert.deepEqual(writes.mock.calls[0].arguments[2], { mode: 0o600, flush: true }) // on disk before the rename
   assert.deepEqual(renames.mock.calls[0].arguments, [`${file}.tmp`, file])
-  assert.equal(fs.statSync(file).mode & 0o777, 0o600)
+  if (process.platform !== 'win32') assert.equal(fs.statSync(file).mode & 0o777, 0o600)
   assert.equal(fs.existsSync(`${file}.tmp`), false)
   assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).theme, 'dark')
 })

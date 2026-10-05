@@ -26,7 +26,7 @@ test('sweepModeFiles: deletes stored files no mode uses, but not those a state.j
   assert.deepEqual(fs.readdirSync(stored), [`${used}.glint`])
 })
 
-test("addModeFiles: an EPUB chapter that's a link to a file outside the book isn't read", async () => {
+test("addModeFiles: an EPUB chapter that's a link to a file outside the book isn't read", { skip: process.platform === 'win32' && 'symlinks need admin rights on Windows' }, async () => {
   const dir = freshUserData()
   initState({})
   patchState({ modes: [{ id: 'm1', name: 'Reading', prompt: '' }] })

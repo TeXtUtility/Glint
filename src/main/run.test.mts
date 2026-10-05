@@ -23,7 +23,7 @@ test('hasHiddenControls: escape sequences and bidi overrides, which could rewrit
   assert.equal(hasHiddenControls('echo caf\u00e9 → done'), false)
 })
 
-test('wrapper: shows the commands, runs them only on y, in the same shell', () => {
+test('wrapper: shows the commands, runs them only on y, in the same shell', { skip: process.platform === 'win32' && 'bash and zsh only' }, () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'glint-run-test-'))
   const cmds = path.join(dir, 'commands.sh')
   const marker = path.join(dir, 'ran')

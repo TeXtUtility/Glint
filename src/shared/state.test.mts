@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
   applyPatch, CAPSULE_ITEMS, elapsedMs, formatElapsed, ghostHints, isNewer, loadPersisted, normalize, parsePersisted, PERSISTED_DEFAULTS, phase,
-  isSystemShortcut, prettyAccelerator, RUNTIME_DEFAULTS, tidyDividers, toAccelerator, type State,
+  isSystemShortcut, nativeAccelerator, prettyAccelerator, RUNTIME_DEFAULTS, tidyDividers, toAccelerator, type State,
 } from './state.ts'
 
 const base = (): State => ({ ...RUNTIME_DEFAULTS, ...PERSISTED_DEFAULTS, platform: 'darwin' })
@@ -182,6 +182,16 @@ test('prettyAccelerator: Mac modifiers in the order macOS writes them', () => {
   assert.equal(prettyAccelerator('CommandOrControl+Shift+\\', true), '⇧⌘\\')
   assert.equal(prettyAccelerator('CommandOrControl+Control+Alt+Shift+Up', true), '⌃⌥⇧⌘↑')
   assert.equal(prettyAccelerator('CommandOrControl+Shift+K', false), 'Ctrl+Shift+K')
+})
+
+test('Windows keeps the Mac shortcuts: Ctrl for ⌘, Win for ⌃', () => {
+  assert.equal(nativeAccelerator(PERSISTED_DEFAULTS.shortcuts.toggleGlance, false), 'CommandOrControl+Super+\\')
+  assert.equal(nativeAccelerator(PERSISTED_DEFAULTS.shortcuts.toggleGlance, true), PERSISTED_DEFAULTS.shortcuts.toggleGlance)
+  assert.equal(prettyAccelerator(PERSISTED_DEFAULTS.shortcuts.ghostAsk, false), 'Ctrl+Win+Alt+Enter')
+  const win = Object.values(PERSISTED_DEFAULTS.shortcuts).filter(Boolean).map((a) => nativeAccelerator(a, false))
+  assert.equal(new Set(win).size, win.length)
+  const key = { code: 'Backslash', metaKey: true, ctrlKey: true, altKey: false, shiftKey: false }
+  assert.equal(toAccelerator(key, false), PERSISTED_DEFAULTS.shortcuts.toggleGlance)
 })
 
 test("ghostHints: Ghost's card lists the shortcuts as they're set", () => {

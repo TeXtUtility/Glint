@@ -83,7 +83,7 @@ test('fetchSherpaModel: a connection that breaks mid-download rejects rather tha
   assert.deepEqual(fs.readdirSync(into), [])
 })
 
-test("fetchSherpaModel: a write that fails (a full disk, a folder it can't write) rejects rather than hanging", async () => {
+test("fetchSherpaModel: a write that fails (a full disk, a folder it can't write) rejects rather than hanging", { skip: process.platform === 'win32' && 'chmod does not stop writes on Windows' }, async () => {
   const into = folder()
   fs.chmodSync(into, 0o500)
   serve(() => new Uint8Array(1024 * 1024))
