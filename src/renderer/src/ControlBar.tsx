@@ -40,6 +40,7 @@ export function ControlBar() {
   const live = !!s.session
   const streaming = s.chat.isStreaming
   const failure = s.aiFailure ?? s.audioError
+  const updateReady = s.update.status === 'available'
   // Compact: only the dot, the chat box, Ask and Meeting options. Onboarding's practice run needs the whole capsule.
   const compact = s.compactBar && !s.practicing
   const faded = s.discreet && !open && !failure
@@ -75,10 +76,11 @@ export function ControlBar() {
           : <SessionControls s={s} items={shown} modeOpen={open === 'mode'} onMode={(o) => setOpen(o ? 'mode' : null)} />}
         {(!failure || compact) && (
           <button className={`circle tune ${open === 'options' ? 'open' : ''}`} aria-label="Meeting options" aria-haspopup="dialog" aria-expanded={open === 'options'}
-            data-tip={open === 'options' ? undefined : moved.length ? 'Meeting options, and the controls kept there'
+            data-tip={open === 'options' ? undefined : updateReady ? 'Meeting options. An update is ready: All settings…'
+              : moved.length ? 'Meeting options, and the controls kept there'
               : 'Meeting options: layout, discreet, copying, language, AI provider, note, opacity'} onClick={() => toggle('options')}>
             <Icon name="tune" />
-            {s.namePrompt && hidden.includes('labels') && <i className="badge" />}
+            {s.namePrompt && hidden.includes('labels') ? <i className="badge" /> : updateReady && <i className="badge update" />}
           </button>
         )}
       </div>
@@ -359,6 +361,7 @@ export const languageOptions = (current: string) =>
 /** Tier 2: what changes per meeting, gathered in one sheet under the tune button. */
 function MeetingOptions({ c, hidden, more: moved, closing, onClose }: { c: ItemCtx; hidden: CapsuleItem[]; more: CapsuleItem[]; closing: boolean; onClose: () => void }) {
   const { s } = c
+  const updateReady = s.update.status === 'available'
   const more = moved.filter((id) => id !== 'mode')
   const lang = s.transcription.language
   const [min, max, step] = OPACITY_RANGES.background
@@ -417,8 +420,8 @@ function MeetingOptions({ c, hidden, more: moved, closing, onClose }: { c: ItemC
         <output>{Math.round(s.opacity.background * 100)}%</output>
       </label>
       <hr />
-      <button className="opt-settings" onClick={() => (onClose(), glint.send('window:open-settings'))}>
-        <Icon name="gear" size={14} />All settings…<kbd>{s.shortcuts.openSettings ? prettyAccelerator(s.shortcuts.openSettings, isMac) : ''}</kbd>
+      <button className="opt-settings" onClick={() => (onClose(), glint.send('window:open-settings', updateReady ? 'general' : undefined))}>
+        <Icon name="gear" size={14} />All settings…{updateReady && <i className="badge update" aria-label="update available" />}<kbd>{s.shortcuts.openSettings ? prettyAccelerator(s.shortcuts.openSettings, isMac) : ''}</kbd>
       </button>
     </div>
   )

@@ -237,6 +237,12 @@ html.glass .panel.surface.faded { background-color: rgb(var(--glass-rgb) / calc(
 .more-controls:empty { display: none; }
 .opt-settings { display: flex; align-items: center; gap: 8px; margin: -2px -8px -4px; padding: 6px 8px !important; border-radius: 8px !important; font-size: 12px; color: var(--text); }
 .opt-settings:hover { background: var(--glass-hover) !important; }
+.opt-settings .badge { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); margin-left: -2px; }
+/* An update is ready: the dot by each Settings button pulses. Opacity and size only, no glow; discreet mode and
+   Reduce Motion still it. */
+@keyframes dot-pulse { 50% { opacity: 0.35; scale: 0.75; } }
+.badge.update { animation: dot-pulse 1.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .badge.update { animation: none; } }
 .opt-settings kbd { margin-left: auto; font: 11px -apple-system, BlinkMacSystemFont, system-ui, sans-serif; background: none; border: none; padding: 0; color: var(--faint); }
 .popover.options { border: 1px solid transparent; background-clip: padding-box; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55); transition: border-color 0.12s; --frost: var(--glass-alpha, 0.9); }
 .popover.options.on-share { border-color: rgba(255, 255, 255, 0.14); }

@@ -560,7 +560,7 @@ export function ChatPanel() {
               <button className="icon-btn" aria-label={updateReady ? 'Settings, update available' : 'Settings'} data-tip={updateReady ? 'Settings: an update is ready to install' : 'Settings'}
                 onClick={() => glint.send('window:open-settings', updateReady ? 'general' : undefined)}>
                 <Icon name="gear" />
-                {updateReady && <span className="badge" />}
+                {updateReady && <span className="badge update" />}
               </button>
             </>
           ) : chat.view === 'transcript' ? <kbd className="view-key">{MOD}T</kbd> : (
