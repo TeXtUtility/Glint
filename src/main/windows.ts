@@ -88,9 +88,10 @@ function createOverlay(name: 'controlBar' | 'chat') {
     minimizable: false,
     maximizable: false,
     fullscreenable: false,
-    // Lets main place Ghost's strip over the menu bar; otherwise macOS pushes every window below it. The capsule and
-    // panel still keep to the work area (place).
-    enableLargerThanScreen: name === 'chat',
+    // macOS otherwise pulls a window back onto the screen when it's shown: the capsule's wide window, whose empty room
+    // hangs off a screen edge when the capsule sits near it, would jump toward the middle and back. It also lets Ghost's
+    // strip go over the menu bar. The capsule and panel themselves still keep to the work area (place).
+    enableLargerThanScreen: true,
     skipTaskbar: true,
     hiddenInMissionControl: true,
     focusable: false,
