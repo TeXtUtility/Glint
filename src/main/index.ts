@@ -23,7 +23,7 @@ import { requestKeys, stopKeys, watchKeys } from './keys'
 import { watchCalls } from './meetings'
 import { calendarAccess, inviteFor, requestCalendar } from './calendar'
 import { inviteContext } from '../shared/meetings'
-import { finishAudio, flushAudio, initAudio, prepareModels, pushMic } from './audio'
+import { finishAudio, flushAudio, initAudio, prepareModels, pushCall, pushMic } from './audio'
 import { addToCalendar, draftFollowUp, generateNotes, macSleeps, macWakes, initHistory, listSessions, loadSession, relabelSpeaker, renameSpeaker, resumeSession, saveChat, saveLiveSession, setMessages, trashSession, updateActions, updateNotes } from './history'
 import { deleteMe, deletePerson, endVoiceSession, enrollMe, forgetEveryone, initVoice, mergeSpeakers, nameVoice, renamePerson, settleSpeakers, skipVoice, voiceAudio, voiceSessionId } from './voice'
 import { setGlass, type GlassRect } from './mac-panel'
@@ -141,10 +141,19 @@ function boot() {
         return false
       }
     })()
-    cb(perm === 'media' && ownPage && mediaTypes.length > 0 && mediaTypes.every((t) => t === 'audio'))
+    // getDisplayMedia asks with no media types; on Windows that's the call's loopback (setDisplayMediaRequestHandler).
+    const loopback = process.platform === 'win32' && !mediaTypes.length
+    cb(perm === 'media' && ownPage && (loopback || (mediaTypes.length > 0 && mediaTypes.every((t) => t === 'audio'))))
   })
   // Permission *checks* (e.g. navigator.permissions) default to allowed; answer them the same way.
   electronSession.defaultSession.setPermissionCheckHandler((_wc, perm, origin) => perm === 'media' && origin === APP_ORIGIN)
+  // Windows hears the call through Chromium's loopback: our own page's getDisplayMedia gets the screen with system audio.
+  if (process.platform === 'win32') {
+    electronSession.defaultSession.setDisplayMediaRequestHandler((req, cb) => {
+      if (!req.frame || originOf(req.frame.url) !== APP_ORIGIN) return cb({})
+      desktopCapturer.getSources({ types: ['screen'] }).then(([src]) => cb(src ? { video: src, audio: 'loopback' } : {}), () => cb({}))
+    })
+  }
 
   // Fetch the keychain key now. If macOS has to ask for it (e.g. after a rebuild), the prompt blocks this process
   // until answered and isn't hidden from screen sharing, so it belongs at launch, not at the first save mid-call.
@@ -494,6 +503,9 @@ function registerIpc() {
   handle('sessions:rename-speaker', (_e, id: string, speakerId: string, name: string) => renameSpeaker(String(id), String(speakerId), name))
   on('audio:mic', (_e, chunk: unknown) => {
     if (chunk instanceof Uint8Array || chunk instanceof ArrayBuffer) pushMic(new Uint8Array(chunk as ArrayBuffer))
+  })
+  on('audio:call', (_e, chunk: unknown) => {
+    if (chunk instanceof Uint8Array || chunk instanceof ArrayBuffer) pushCall(new Uint8Array(chunk as ArrayBuffer))
   })
   handle('audio:flush', () => flushAudio())
 

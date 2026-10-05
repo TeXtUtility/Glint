@@ -138,7 +138,7 @@ async function start() {
     if (voiceSessionId !== getState().session?.id) silentCall = new SilentCall() // a resume keeps the session's
     voiceSessionId = getState().session?.id ?? null
     warmModels()
-    if (process.platform !== 'darwin') return // ponytail: Windows loopback capture (spec §9c) not built yet
+    if (!isMac) return // the chat window sends the call (pushCall)
     // 16-bit mono PCM, resampled by CoreAudio. Packaged, the helper sits outside app.asar: a binary inside can't be run.
     const binaryPath = app.isPackaged ? path.join(process.resourcesPath, 'app.asar.unpacked/node_modules/audiotee/bin/audiotee') : undefined
     const t = new AudioTee({ sampleRate: 16000, chunkDurationMs: 50, binaryPath })
@@ -149,11 +149,7 @@ async function start() {
       let b = carry ? Buffer.concat([carry, data]) : data
       carry = b.length % 2 ? b.subarray(b.length - 1) : null
       if (carry) b = b.subarray(0, b.length - 1)
-      const samples = s16ToF32(toInt16(b))
-      const heard = silentCall.push(samples)
-      if (heard === 'blocked' && !getState().audioError) patchState({ audioError: CALL_BLOCKED, chat: SHOW })
-      else if (heard === 'back' && getState().audioError === CALL_BLOCKED) patchState({ audioError: null })
-      enqueue('them', samples)
+      callChunk(s16ToF32(toInt16(b)))
     })
     t.on('error', (err: Error) => tee === t && helperFailed(err))
     t.on('stop', () => tee === t && helperFailed(new Error('system audio helper exited')))
@@ -207,6 +203,18 @@ function helperFailed(err: Error) {
 /** Mic chunks from the chat window (16 kHz PCM16). */
 export function pushMic(bytes: Uint8Array) {
   enqueue('me', s16ToF32(toInt16(bytes)))
+}
+
+/** Windows: the call's chunks from the chat window's loopback capture (16 kHz PCM16). */
+export function pushCall(bytes: Uint8Array) {
+  if (!isMac && capturing) callChunk(s16ToF32(toInt16(bytes)))
+}
+
+function callChunk(samples: Float32Array) {
+  const heard = silentCall.push(samples)
+  if (heard === 'blocked' && !getState().audioError) patchState({ audioError: CALL_BLOCKED, chat: SHOW })
+  else if (heard === 'back' && getState().audioError === CALL_BLOCKED) patchState({ audioError: null })
+  enqueue('them', samples)
 }
 
 function toInt16(bytes: Uint8Array) {

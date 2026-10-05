@@ -29,6 +29,7 @@ export const glint: GlintBridge = {
 // Main forwards its own errors so they show up in each window's DevTools console.
 glint.on('app:error', (msg: string) => console.error('[main]', msg))
 export const isMac = glint.platform === 'darwin'
+document.documentElement.dataset.platform = glint.platform
 /** As in "on this Mac". */
 export const COMPUTER = isMac ? 'Mac' : 'PC'
 export const OS = isMac ? 'macOS' : 'Windows'
@@ -41,7 +42,8 @@ export const patch = (p: DeepPartial<State>) => glint.invoke('state:patch', p)
 
 /** The opacity settings as CSS variables on an overlay's root element (read by .bar, .panel and .discreet). */
 export const opacityStyle = (o: State['opacity']) =>
-  ({ '--overlay-opacity': o.overlay, '--glass-alpha': o.background, '--idle-opacity': o.idle }) as CSSProperties
+  // Nothing blurs the screen behind the glass off a Mac, so the tint is denser there: 90% reads as 96%.
+  ({ '--overlay-opacity': o.overlay, '--glass-alpha': isMac ? o.background : 1 - (1 - o.background) * 0.4, '--idle-opacity': o.idle }) as CSSProperties
 
 export function useAppState(): State | null {
   const [s, set] = useState<State | null>(glint.state)

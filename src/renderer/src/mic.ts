@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { glint, patch } from './glint'
+import { glint, isMac, patch } from './glint'
 
 /** Session capture settings; the Settings mic test uses the same so its meter matches what gets transcribed. */
 export const MIC_CONSTRAINTS: MediaTrackConstraints = { channelCount: 1, echoCancellation: false, noiseSuppression: true, autoGainControl: true }
@@ -14,7 +14,19 @@ const defaultMic = async () => (await navigator.mediaDevices.enumerateDevices())
  * went away (unplugged, AirPods out of range) or the system default changed; calling the returned function doesn't count.
  */
 export async function openMic(onChunk: (pcm16: ArrayBuffer) => void, constraints = MIC_CONSTRAINTS, onEnded?: () => void): Promise<() => void> {
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: constraints })
+  return openPcm(await navigator.mediaDevices.getUserMedia({ audio: constraints }), onChunk, onEnded)
+}
+
+/** Windows: everything the PC plays, through Chromium's loopback (main hands it the screen with audio: 'loopback'). */
+async function openCall(onChunk: (pcm16: ArrayBuffer) => void, onEnded: () => void): Promise<() => void> {
+  const raw = { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+  const stream = await navigator.mediaDevices.getDisplayMedia({ audio: raw, video: true })
+  stream.getVideoTracks().forEach((t) => (t.stop(), stream.removeTrack(t)))
+  if (!stream.getAudioTracks().length) throw new Error('Windows gave no system audio')
+  return openPcm(stream, onChunk, onEnded)
+}
+
+async function openPcm(stream: MediaStream, onChunk: (pcm16: ArrayBuffer) => void, onEnded?: () => void): Promise<() => void> {
   let done = false
   const ended = () => !done && ((done = true), onEnded?.())
   // Chromium stays on the device it opened when another becomes the default (AirPods connecting), so watch for that.
@@ -78,6 +90,38 @@ export function useMicCapture(active: boolean, room: boolean) {
       close?.()
     }
   }, [active, room])
+}
+
+/** The call's side on Windows; macOS hears it in main (audiotee). Reopened when output devices change. */
+export function useCallCapture(active: boolean) {
+  useEffect(() => {
+    if (!active || isMac) return
+    let cancelled = false
+    let close: (() => void) | undefined
+    let failures = 0
+    let retry: ReturnType<typeof setTimeout> | undefined
+    const open = () => {
+      close?.()
+      close = undefined
+      openCall((pcm) => glint.send('audio:call', new Uint8Array(pcm)), () => !cancelled && (clearTimeout(retry), (retry = setTimeout(open, 500)))).then(
+        (c) => (cancelled ? c() : ((close = c), (failures = 0))),
+        (err) => {
+          if (cancelled) return
+          if (++failures < 3) retry = setTimeout(open, 1000)
+          else void patch({ audioError: `Couldn't hear the call: ${err instanceof Error ? err.message : String(err)}` })
+        },
+      )
+    }
+    const reopen = () => (clearTimeout(retry), (retry = setTimeout(open, 500)))
+    navigator.mediaDevices.addEventListener('devicechange', reopen)
+    open()
+    return () => {
+      cancelled = true
+      clearTimeout(retry)
+      navigator.mediaDevices.removeEventListener('devicechange', reopen)
+      close?.()
+    }
+  }, [active])
 }
 
 export interface Recording {

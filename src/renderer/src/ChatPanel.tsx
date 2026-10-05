@@ -15,7 +15,7 @@ import { modelLabel, PROVIDER_LABELS, type Failure } from '../../shared/provider
 import { isQuestion } from '../../shared/speakers'
 import { GhostPill } from './Ghost'
 import { Glance, type Cue } from './Glance'
-import { useMicCapture, usePlayback } from './mic'
+import { useCallCapture, useMicCapture, usePlayback } from './mic'
 import { withNote } from './screenshotNote'
 import { Presence, Segmented, Toast } from './ui'
 
@@ -101,6 +101,7 @@ export function ChatPanel() {
   const dropped = useRef(0)
 
   useMicCapture(!!s?.session && !s.pause.paused, !!s?.roomMode && s.voiceprint === 'enrolled')
+  useCallCapture(!!s?.session && !s.pause.paused)
 
   // Handlers fired from main (hotkeys) need the latest values without re-subscribing.
   const latest = useRef({ s, msgs, input, historyOpen })
