@@ -298,10 +298,10 @@ function epubText(file: string): Promise<string> {
     else await run('/usr/bin/unzip', ['-qq', '-o', file, '-d', tmp], { timeout: 120_000 }) // unzip drops ../ from paths
     // unzip restores symlinks, which could point anywhere (~/.ssh, /dev/zero): only regular files that really are
     // inside the folder, links followed, are read.
-    const root = await fs.promises.realpath(tmp) // the temp folder's own path has a link in it on macOS
+    const root = fs.realpathSync.native(tmp) // the temp folder's own path has a link in it on macOS
     const inside = (f: string) => {
       try {
-        const real = fs.realpathSync(path.resolve(tmp, f))
+        const real = fs.realpathSync.native(path.resolve(tmp, f)) // native, like root's: it expands Windows' short names
         return real.startsWith(root + path.sep) && fs.statSync(real).isFile() ? real : null
       } catch {
         return null // not there

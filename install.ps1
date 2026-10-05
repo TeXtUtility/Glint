@@ -20,6 +20,14 @@ function Install-Glint {
   $tar = Join-Path $env:SystemRoot 'System32\tar.exe'
   function Step($m) { Write-Host "==> $m" }
   function Die($m) { [Console]::Error.WriteLine("error: $m"); throw $m }
+  # Windows PowerShell turns a program's stderr into errors, which 'Stop' would end the install on (npm's first
+  # warning, say): here they're plain output. Returns the exit code.
+  function Native {
+    $ErrorActionPreference = 'Continue'
+    $rest = @($args | Select-Object -Skip 1)
+    & $args[0] @rest 2>&1 | ForEach-Object { "$_" } | Out-Host
+    $LASTEXITCODE
+  }
 
   if ([Environment]::OSVersion.Version.Build -lt 19041) { Die 'Windows 10 version 2004 or later is needed: earlier ones show Glint in screen shares.' }
   if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { Die "Windows on Arm isn't supported yet." }
@@ -28,7 +36,7 @@ function Install-Glint {
   if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
     if (-not (Get-Command winget -ErrorAction SilentlyContinue)) { Die 'Node.js is not installed. Get version 22.18 or later from https://nodejs.org, then run this again.' }
     Step 'Installing Node.js with winget'
-    winget install --id OpenJS.NodeJS.LTS -e --silent --accept-package-agreements --accept-source-agreements | Out-Host
+    Native winget install --id OpenJS.NodeJS.LTS -e --silent --accept-package-agreements --accept-source-agreements | Out-Null
     $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
     if (-not (Get-Command node -ErrorAction SilentlyContinue)) { Die "Node.js didn't install. Get version 22.18 or later from https://nodejs.org, then run this again." }
   }
@@ -53,25 +61,21 @@ function Install-Glint {
       } catch {
         Die "couldn't download commit $($commit.Substring(0, 7)) of Glint. Check the internet connection, then run this again."
       }
-      & $tar -xf "$src\glint.zip" -C $src
+      if (Native $tar -xf "$src\glint.zip" -C $src) { Die "couldn't unpack the download." }
       Set-Location (Get-ChildItem $src -Directory | Select-Object -First 1).FullName
       $env:GLINT_COMMIT = $commit # no git here, so the build reads its commit from this
     }
 
     Step 'Installing dependencies'
-    npm.cmd ci --no-audit --no-fund
-    if ($LASTEXITCODE) { Die "couldn't install Glint's dependencies. The Glint you have is unchanged." }
+    if (Native npm.cmd ci --no-audit --no-fund) { Die "couldn't install Glint's dependencies. The Glint you have is unchanged." }
 
     # Before anything is built or copied, so a failing build never replaces the Glint that's installed.
     Step 'Checking the code'
-    npm.cmd run typecheck
-    if ($LASTEXITCODE) { Die "this version of Glint fails its type check, so it wasn't installed. The Glint you have is unchanged." }
-    npm.cmd test
-    if ($LASTEXITCODE) { Die "this version of Glint fails its tests, so it wasn't installed. The Glint you have is unchanged." }
+    if (Native npm.cmd run typecheck) { Die "this version of Glint fails its type check, so it wasn't installed. The Glint you have is unchanged." }
+    if (Native npm.cmd test) { Die "this version of Glint fails its tests, so it wasn't installed. The Glint you have is unchanged." }
 
     Step 'Building (takes a minute or two)'
-    npm.cmd run package:win
-    if ($LASTEXITCODE) { Die "the build failed, so Glint wasn't installed. The Glint you have is unchanged." }
+    if (Native npm.cmd run package:win) { Die "the build failed, so Glint wasn't installed. The Glint you have is unchanged." }
     $app = Join-Path (Get-Location) 'dist\win-unpacked'
     if (-not (Test-Path "$app\Glint.exe")) { Die 'the build finished but no Glint.exe was found in dist\win-unpacked.' }
     $version = node -p "require('./package.json').version"

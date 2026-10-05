@@ -62,7 +62,7 @@ test("unreadable session files are counted and skipped; the rest still list", ()
   mock.restoreAll()
   assert.deepEqual(sessions.map((s) => s.id), ['chat-ok'])
   assert.equal(unreadable, 2)
-  assert.throws(() => loadSession('other-mac'), /keychain key/)
+  assert.throws(() => loadSession('other-mac'), /keychain key|Windows account/)
 })
 
 test('a session id that could name a path outside the sessions folder is refused', async () => {
