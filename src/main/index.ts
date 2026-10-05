@@ -179,6 +179,11 @@ function boot() {
   screen.on('display-metrics-changed', onDisplaysChanged)
   app.on('browser-window-focus', checkPermissions)
   app.on('before-quit', flushState)
+  // Windows ends its session (shut down, restart, sign out) without before-quit, so this saves what that would.
+  let ended = false
+  const sessionEnd = () => void (ended || ((ended = true), saveLiveSession(), endVoiceSession(), flushState()))
+  for (const w of BrowserWindow.getAllWindows()) w.on('session-end', sessionEnd)
+  app.on('browser-window-created', (_e, w) => w.on('session-end', sessionEnd))
   // A Mac asleep mid-session records nothing; pausing shows that, instead of a session that looks live.
   powerMonitor.on('suspend', () => {
     macSleeps()

@@ -116,7 +116,8 @@ function loadWin() {
     close: advapi.func('long RegCloseKey(intptr_t key)'),
     enumWindows: user32.func('bool EnumWindows(GlintEnumWindows *cb, intptr_t param)'),
     visible: user32.func('bool IsWindowVisible(void *hwnd)'),
-    title: user32.func('int GetWindowTextW(void *hwnd, _Out_ uint16_t *buf, int max)'),
+    // Not GetWindowTextW: for Glint's own windows that sends WM_GETTEXT, which can deadlock on a busy thread.
+    title: user32.func('int InternalGetWindowText(void *hwnd, _Out_ uint16_t *buf, int max)'),
     pidOf: user32.func('uint32_t GetWindowThreadProcessId(void *hwnd, _Out_ uint32_t *pid)'),
     openProcess: kernel32.func('void *OpenProcess(uint32_t access, bool inherit, uint32_t pid)'),
     imageName: kernel32.func('bool QueryFullProcessImageNameW(void *proc, uint32_t flags, _Out_ uint16_t *buf, _Inout_ uint32_t *len)'),

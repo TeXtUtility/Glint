@@ -259,7 +259,9 @@ let barHit = true
 export function setBarHit(hit: unknown) {
   if (typeof hit !== 'boolean' || hit === barHit) return
   barHit = hit
-  wins.controlBar?.setIgnoreMouseEvents(!hit, { forward: true })
+  // Windows forwards with a system-wide mouse hook on this thread: any stall here would freeze every app's mouse.
+  // Glint doesn't need forwarding there, since main polls the pointer for the page (watchHover).
+  wins.controlBar?.setIgnoreMouseEvents(!hit, isMac ? { forward: true } : undefined)
 }
 
 export function setBarSize(size: unknown) {
