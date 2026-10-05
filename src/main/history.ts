@@ -292,10 +292,27 @@ let scheduledNotes = 0
 /** Notes are being written, or about to be for a session that just ended. An update's restart waits for them. */
 export const notesPending = () => scheduledNotes > 0 || generating.size > 0
 
+/** When the Mac last went to sleep, whether it's asleep now, and notes that sleep cut off, to write when it wakes. */
+let sleptAt = 0
+let asleep = false
+const afterWake = new Set<string>()
+export function macSleeps() {
+  sleptAt = Date.now()
+  asleep = true
+}
+export function macWakes() {
+  asleep = false
+  for (const id of afterWake) retryAfterWake(id)
+  afterWake.clear()
+}
+/** The network is usually back a few seconds after waking. */
+const retryAfterWake = (id: string) => (asleep ? afterWake.add(id) : setTimeout(() => void generateNotes(id), 10_000))
+
 export async function generateNotes(id: string) {
   if (generating.has(id) || getState().session?.id === id) return // live sessions get notes when they end
   const r = tryLoad(id)
   if (!r || (!r.transcript.length && !r.messages.some((m) => m.role === 'user'))) return
+  const started = Date.now()
   generating.add(id)
   write({ ...r, notesStatus: 'processing', notesError: undefined })
   try {
@@ -318,8 +335,11 @@ export async function generateNotes(id: string) {
     patchState({ notesReady: { id, title: (cur.edited && cur.title) || notes.title } })
   } catch (err) {
     console.error('[history] notes failed:', err)
+    // Cut off by the Mac sleeping (the lid closing): written again once it's awake, not left failed.
+    const slept = sleptAt >= started
     const cur = tryLoad(id)
-    if (cur) write({ ...cur, notesStatus: 'failed', notesError: (err as Error).message })
+    if (cur) write({ ...cur, notesStatus: 'failed', notesError: slept ? 'the Mac went to sleep while they were being written; trying again once it\'s awake' : (err as Error).message })
+    if (slept && cur) retryAfterWake(id)
   } finally {
     generating.delete(id)
   }

@@ -2,12 +2,13 @@
 // in native memory, which the main process's garbage collector doesn't give back.
 import { parentPort } from 'node:worker_threads'
 import { OfflineRecognizer } from 'sherpa-onnx-node'
+import { serve } from './worker'
 
 type Message = { t: 'load'; dir: string } | { t: 'decode'; id: number; samples: Float32Array }
 
 let rec: OfflineRecognizer | null = null
 
-parentPort!.on('message', async (m: Message) => {
+serve(async (m: Message) => {
   try {
     if (m.t === 'load') {
       const file = (f: string) => `${m.dir}/${f}`

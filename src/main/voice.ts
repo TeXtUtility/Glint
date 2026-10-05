@@ -12,6 +12,7 @@ import type { TranscriptItem } from '../shared/state'
 import { getState, patchState } from './state'
 import { verbose } from './log'
 import createVoiceWorker from './voice-worker?nodeWorker'
+import { stopWorker } from './worker'
 
 const MODEL = {
   id: 'titanet-small',
@@ -79,7 +80,7 @@ export function loadVoiceModel(): Promise<void> {
     if (gen !== generation) {
       // The session ended while it loaded: nothing would unload it. Its exit mustn't fail a newer worker's asks.
       w.removeAllListeners('exit')
-      void w.terminate()
+      stopWorker(w)
       throw new Error('the voice model was unloaded')
     }
     worker = w
@@ -97,7 +98,7 @@ export function loadVoiceModel(): Promise<void> {
 /** Frees the voice models (their worker ends); the next session or voice recording loads them again. */
 export function unloadVoiceModel() {
   generation++
-  void worker?.terminate()
+  if (worker) stopWorker(worker)
   worker = null
   loading = null
 }
