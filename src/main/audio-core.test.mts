@@ -63,6 +63,8 @@ test('silero finds speech in synthesized audio and not in silence', { skip: proc
   const dataAt = wav.indexOf('data') + 8
   const speech = s16ToF32(new Int16Array(wav.buffer.slice(wav.byteOffset + dataAt, wav.byteOffset + wav.length - ((wav.length - dataAt) % 2))))
   fs.rmSync(dir, { recursive: true })
+  // GitHub's Mac runners sometimes synthesize silence; that's no test of the VAD.
+  if (!speech.some((x) => Math.abs(x) > 0.01)) return ctx.skip('speech synthesis gave silence on this Mac')
 
   const vad = await ort.InferenceSession.create(path.join(import.meta.dirname, '../../resources/silero_vad.onnx'))
   const stream = new RoleStream(new VadStream(vad))
