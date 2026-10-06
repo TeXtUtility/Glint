@@ -19,21 +19,17 @@
 
 ## Install
 
-macOS 14.2 or later:
+One line for both, in Terminal on a Mac (macOS 14.2 or later) or PowerShell on Windows (10 version 2004 or later):
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/TeXtUtility/Glint/main/install.sh | bash
+```
+function irm { curl -fsSL "${1%.ps1}.sh"; }; function iex { bash; }; irm https://raw.githubusercontent.com/TeXtUtility/Glint/main/install.ps1 | iex
 ```
 
-It asks you to choose a password for Glint's signing key, and asks for it again at every update, so no other app can pass itself off as Glint and use its permissions.
+PowerShell's own `irm` and `iex` win over the two functions, so it runs install.ps1. A Mac's shell uses the functions, which fetch install.sh with curl and run it with bash.
 
-Windows 10 version 2004 or later, in PowerShell:
+On a Mac it asks you to choose a password for Glint's signing key, and asks for it again at every update, so no other app can pass itself off as Glint and use its permissions.
 
-```powershell
-irm https://raw.githubusercontent.com/TeXtUtility/Glint/main/install.ps1 | iex
-```
-
-It builds Glint on your PC and installs it for your user, with a Start menu entry. It needs Node.js 22.18 or later, and installs it with winget if it's missing. Shortcuts are the Mac's, with Ctrl for ⌘ and the Win key for ⌃.
+On Windows it builds Glint on your PC and installs it for your user, with a Start menu entry. It needs Node.js 22.18 or later, and installs it with winget if it's missing. Shortcuts are the Mac's, with Ctrl for ⌘ and the Win key for ⌃.
 
 ## The capsule
 
