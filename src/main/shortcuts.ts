@@ -59,7 +59,8 @@ export function updateShortcuts(s: State, run: (action: ShortcutAction) => void)
     for (const [action, acc] of active) {
       let ok = false
       try {
-        ok = globalShortcut.register(nativeAccelerator(acc, process.platform === 'darwin'), () => run(action))
+        // On the next tick: hiding a window inside Windows' hotkey callback flips it hidden and shown forever.
+        ok = globalShortcut.register(nativeAccelerator(acc, process.platform === 'darwin'), () => void setImmediate(() => run(action)))
         if (!ok) console.warn(`[shortcuts] ${acc} is taken by another app, or the system refuses it`)
       } catch (err) {
         console.warn(`[shortcuts] invalid accelerator ${acc}:`, err)

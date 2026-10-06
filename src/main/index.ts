@@ -929,7 +929,7 @@ function trayMenu(s: State) {
   const sep: MenuItemConstructorOptions = { type: 'separator' }
   const showPanel = () => patchState({ overlayVisible: true, chat: { visible: true } })
 
-  return Menu.buildFromTemplate([
+  const items: MenuItemConstructorOptions[] = [
     // Status lines are enabled so macOS doesn't grey them; clicking one shows the panel.
     ...(failure ? [{ ...sub(s.aiFailure ? 'The AI is failing' : 'Audio stopped', shorten(failure, isMac ? 70 : 50)), icon: dot(7, RED), enabled: inApp, click: showPanel }] : []),
     live
@@ -952,7 +952,13 @@ function trayMenu(s: State) {
     sep,
     { label: 'Restart Glint', click: () => relaunch(true) },
     { ...sub('Quit Glint', live ? 'Ends the session' : undefined), click: () => app.quit() },
-  ])
+  ]
+  // Like hotkeys (shortcuts.ts), on the next tick: a menu click runs inside a native callback too.
+  for (const it of items) {
+    const click = it.click
+    if (click) it.click = (...a) => void setImmediate(() => click(...a))
+  }
+  return Menu.buildFromTemplate(items)
 }
 
 // Cmd+H and Cmd+Q hide the overlay. Quit lives in the tray.
