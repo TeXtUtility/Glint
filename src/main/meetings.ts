@@ -1,6 +1,7 @@
 // Notices a call starting (an app starting to use the mic, macOS 14.2+ Core Audio) so Glint can offer to take notes.
 // It reads which apps use the mic, never the audio; window titles only while a browser has the mic.
 import koffi from 'koffi'
+import os from 'node:os'
 import { browserHasMic, callsNow } from '../shared/meetings'
 import { phase } from '../shared/state'
 import { getState, patchState } from './state'
@@ -122,6 +123,7 @@ function loadWin() {
     openProcess: kernel32.func('void *OpenProcess(uint32_t access, bool inherit, uint32_t pid)'),
     imageName: kernel32.func('bool QueryFullProcessImageNameW(void *proc, uint32_t flags, _Out_ uint16_t *buf, _Inout_ uint32_t *len)'),
     closeHandle: kernel32.func('bool CloseHandle(void *h)'),
+    enumProcesses: kernel32.func('bool K32EnumProcesses(_Out_ uint32_t *pids, uint32_t size, _Out_ uint32_t *used)'),
   }
 }
 
@@ -140,18 +142,42 @@ function subkeys(key: number): string[] {
   }
 }
 
-/** Windows logs each app's mic use under ConsentStore; one whose last use hasn't stopped is using it now. */
+/** Full paths of the programs running now, lower-cased. */
+export function runningExes(): Set<string> {
+  const n = winLib()
+  const pids = new Uint32Array(4096)
+  const bytes = [0]
+  if (!n.enumProcesses(pids, pids.byteLength, bytes)) return new Set()
+  const out = new Set<string>()
+  for (const pid of pids.subarray(0, bytes[0] / 4)) {
+    const proc = n.openProcess(0x1000, false, pid) // PROCESS_QUERY_LIMITED_INFORMATION
+    if (!proc) continue
+    const buf = new Uint16Array(1024)
+    const len = [buf.length]
+    if (n.imageName(proc, 0, buf, len)) out.add(utf16(buf, len[0]).toLowerCase())
+    n.closeHandle(proc)
+  }
+  return out
+}
+
+/**
+ * Windows logs each app's mic use under ConsentStore, and a use with no stop is going on now. Not always: one cut off
+ * (a crash, an update mid-call, a power-off) never gets its stop, so a use only counts if it began since boot and,
+ * for a desktop app, that exact program is still running.
+ */
 export function micUsersWin(): string[] {
   const n = winLib()
   const root = [0]
   if (n.open(HKCU, 'Software\\Microsoft\\Windows\\CurrentVersion\\CapabilityAccessManager\\ConsentStore\\microphone', 0, 0x20019, root)) return []
+  const bootMs = Date.now() - os.uptime() * 1000
   const inUse = (key: number, sub: string) => {
     const [start, stop] = ['LastUsedTimeStart', 'LastUsedTimeStop'].map((v) => {
       const data = [0]
       return n.qword(key, sub, v, 0x40, null, data, [8]) ? 0 : Number(data[0])
     })
-    return start > 0 && stop === 0
+    return stop === 0 && start / 10_000 - 11_644_473_600_000 > bootMs // FILETIME: 100 ns since 1601
   }
+  let running: Set<string> | null = null
   const out: string[] = []
   try {
     for (const app of subkeys(root[0])) {
@@ -162,7 +188,10 @@ export function micUsersWin(): string[] {
       const np = [0]
       if (n.open(root[0], app, 0, 0x20019, np)) continue
       try {
-        for (const exe of subkeys(np[0])) if (inUse(np[0], exe)) out.push(exe.split('#').at(-1)!.toLowerCase())
+        for (const exe of subkeys(np[0])) {
+          if (!inUse(np[0], exe) || !(running ??= runningExes()).has(exe.replace(/#/g, '\\').toLowerCase())) continue
+          out.push(exe.split('#').at(-1)!.toLowerCase())
+        }
       } finally {
         n.close(np[0])
       }
