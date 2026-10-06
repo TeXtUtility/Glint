@@ -43,3 +43,7 @@ export const dialog = { showOpenDialog: async () => ({ canceled: true, filePaths
 export const globalShortcut = { register: () => true, unregisterAll: () => {} }
 export const nativeImage = {}
 export const net = {}
+export const nativeTheme = { shouldUseDarkColors: false, shouldUseDarkColorsForSystemIntegratedUI: false }
+export const systemPreferences = { getMediaAccessStatus: () => 'granted' }
+export const desktopCapturer = { getSources: async () => [] }
+export const session = {}

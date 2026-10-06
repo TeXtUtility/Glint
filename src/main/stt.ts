@@ -14,7 +14,7 @@ import { speechModelFor, type LocalWhisper } from '../shared/state.ts'
 import { collapseRepeats, encodeWav } from './audio-core.ts' // extension lets plain Node run this for checks
 import createParakeet from './parakeet-worker?nodeWorker'
 import createWhisper from './whisper-worker?nodeWorker'
-import { TAR } from './system.ts'
+import { TAR } from './platform/system'
 import { stopWorker } from './worker'
 
 /** Transcribes one line of 16 kHz mono speech. */

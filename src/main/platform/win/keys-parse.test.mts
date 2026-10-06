@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { parseWinKey } from './win-keys.ts'
+import { parseWinKey } from './keys-parse.ts'
 
 const none = { ctrl: false, alt: false, win: false, altGr: false }
 

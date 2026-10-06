@@ -1,4 +1,4 @@
-import type { KeyInput } from './keys'
+import type { KeyInput } from '../types'
 
 /** Windows: a key from the hook as typing input. Ctrl, Alt or Win make a shortcut; AltGr (Ctrl+Right Alt) types. */
 export function parseWinKey(vk: number, m: { ctrl: boolean; alt: boolean; win: boolean; altGr: boolean }, chars: string): KeyInput | null {

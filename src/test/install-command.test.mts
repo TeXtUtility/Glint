@@ -5,7 +5,7 @@ import http from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { test } from 'node:test'
 import { promisify } from 'node:util'
-import { POWERSHELL } from '../main/system.ts'
+import { POWERSHELL } from '../main/platform/system.ts'
 
 const run = promisify(execFile)
 

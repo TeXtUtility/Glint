@@ -2,8 +2,8 @@
 // Every key goes on to the app it was typed in. Ended by WM_QUIT (stopKeys).
 import koffi from 'koffi'
 import { parentPort } from 'node:worker_threads'
-import { ControlDoubleTap } from '../shared/typing'
-import { parseWinKey } from './win-keys'
+import { ControlDoubleTap } from '../../../shared/typing'
+import { parseWinKey } from './keys-parse'
 
 const user32 = koffi.load('user32.dll')
 const kernel32 = koffi.load('kernel32.dll')

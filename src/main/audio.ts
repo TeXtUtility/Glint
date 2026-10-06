@@ -2,9 +2,7 @@
 // The mic and system audio are separate pipelines end to end (VAD model, queue, transcription), so one side
 // talking never delays or silences the other. Where they overlap, voice decides: the user talking over the call
 // is kept, the call leaking back into the mic through the speakers is dropped.
-import { AudioTee } from 'audiotee'
 import { app } from 'electron'
-import type { ChildProcess } from 'node:child_process'
 import * as ort from 'onnxruntime-node'
 import path from 'node:path'
 import { isEcho, meVerdict, overlapShare, SPLIT_MIN_S } from '../shared/speakers'
@@ -15,7 +13,7 @@ import { getState, patchState, subscribe } from './state'
 import { loadLocalAsr, transcribeLocal, transcribeOpenAi, unloadLocalAsr } from './stt'
 import { embed, endVoiceSession, label, learnMe, loadVoiceModel, meScore, speakerChanges, unloadVoiceModel } from './voice'
 import { verbose } from './log'
-import { COMPUTER, isMac } from './system'
+import { platform } from './platform'
 import { downloadLiveWords, LIVE_WORDS_MB, liveAudio, liveEnd, liveStart, liveWanted, prepareLiveWords, stopLiveWords } from './live-words'
 
 const MODEL_PATH = path.join(app.isPackaged ? process.resourcesPath : app.getAppPath(), app.isPackaged ? '' : 'resources', 'silero_vad.onnx')
@@ -29,13 +27,8 @@ const FINISH_WAIT_MS = 10_000
 const OVERLAP_SHARE = 0.3
 const ECHO_TEXT_WAIT_MS = 2000
 const SHOW = { visible: true, expanded: true }
-/** Call audio that's exact silence for a minute while the user talks: macOS may be withholding it. */
-const CALL_BLOCKED = isMac
-  ? "No sound from this Mac's audio for a minute. If the other side of the call is talking, macOS may be blocking Glint " +
-    'from hearing it: allow Glint in System Settings → Privacy & Security → Screen & System Audio Recording (Screen ' +
-    'Recording on macOS 14), then pause and resume.'
-  : "No sound from this PC's audio for a minute. If the other side of the call is talking, it may be playing on another " +
-    'device: make it the default output in Windows, then pause and resume.'
+/** Call audio that's exact silence for a minute while the user talks: the OS may be withholding it. */
+const CALL_BLOCKED = platform.words.callBlocked
 const ROLES = ['me', 'them'] as const
 
 /** Bounded concurrency with a bounded queue. */
@@ -71,7 +64,7 @@ interface Pipeline {
 
 const vad: Record<Role, Promise<ort.InferenceSession> | null> = { me: null, them: null }
 let pipes: Record<Role, Pipeline> | null = null
-let tee: AudioTee | null = null
+let stopCall: (() => Promise<void>) | null = null
 let capturing = false
 let generation = 0 // bumps on every start/stop so a slow start can't resurrect a stopped capture
 let dropped = 0
@@ -138,27 +131,13 @@ async function start() {
     if (voiceSessionId !== getState().session?.id) silentCall = new SilentCall() // a resume keeps the session's
     voiceSessionId = getState().session?.id ?? null
     warmModels()
-    if (!isMac) return // the chat window sends the call (pushCall)
-    // 16-bit mono PCM, resampled by CoreAudio. Packaged, the helper sits outside app.asar: a binary inside can't be run.
-    const binaryPath = app.isPackaged ? path.join(process.resourcesPath, 'app.asar.unpacked/node_modules/audiotee/bin/audiotee') : undefined
-    const t = new AudioTee({ sampleRate: 16000, chunkDurationMs: 50, binaryPath })
-    // Pipe reads can end mid-sample; carry an odd byte over so later samples stay aligned.
-    let carry: Buffer | null = null
-    t.on('data', ({ data }: { data: Buffer }) => {
-      if (tee !== t) return // a stopped helper can still flush output for a moment
-      let b = carry ? Buffer.concat([carry, data]) : data
-      carry = b.length % 2 ? b.subarray(b.length - 1) : null
-      if (carry) b = b.subarray(0, b.length - 1)
-      callChunk(s16ToF32(toInt16(b)))
-    })
-    t.on('error', (err: Error) => tee === t && helperFailed(err))
-    t.on('stop', () => tee === t && helperFailed(new Error('system audio helper exited')))
-    tee = t
-    await t.start()
-    // audiotee only reports non-zero exit codes; a helper killed by a signal (code null) would go unnoticed.
-    ;(t as unknown as { process?: ChildProcess }).process?.once('exit', (code, signal) => {
-      if (tee === t) helperFailed(new Error(`system audio helper exited (${signal ?? code})`))
-    })
+    if (!platform.callAudio) return // the chat window sends the call (pushCall)
+    const stopIt = await platform.callAudio.start(
+      (bytes) => gen === generation && callChunk(s16ToF32(toInt16(bytes))),
+      (err) => gen === generation && helperFailed(err),
+    )
+    if (gen === generation) stopCall = stopIt
+    else void stopIt().catch(() => {})
   } catch (err) {
     if (gen === generation) helperFailed(err as Error)
   }
@@ -167,9 +146,9 @@ async function start() {
 function stop(keepSession: boolean) {
   capturing = false
   generation++
-  const t = tee
-  tee = null
-  void t?.stop().catch((err: Error) => console.warn('[audio] helper stop failed:', err))
+  const stopIt = stopCall
+  stopCall = null
+  void stopIt?.().catch((err: Error) => console.warn('[audio] helper stop failed:', err))
   const ps = pipes
   pipes = null
   // Pausing (or ending via finishAudio) keeps what was being said: the queued audio still goes through VAD first.
@@ -205,9 +184,9 @@ export function pushMic(bytes: Uint8Array) {
   enqueue('me', s16ToF32(toInt16(bytes)))
 }
 
-/** Windows: the call's chunks from the chat window's loopback capture (16 kHz PCM16). */
+/** The call's chunks from the chat window's loopback capture (16 kHz PCM16). */
 export function pushCall(bytes: Uint8Array) {
-  if (!isMac && capturing) callChunk(s16ToF32(toInt16(bytes)))
+  if (!platform.callAudio && capturing) callChunk(s16ToF32(toInt16(bytes)))
 }
 
 function callChunk(samples: Float32Array) {
@@ -230,7 +209,7 @@ function enqueue(role: Role, samples: Float32Array) {
   if (p.queue.length > QUEUE_MAX) {
     p.queue.shift()
     if (++dropped === 1) {
-      patchState({ audioError: 'Glint fell more than 10 seconds behind and skipped some audio, so the transcript has a gap. Other heavy apps may be slowing this ' + COMPUTER + ' down.', chat: SHOW })
+      patchState({ audioError: 'Glint fell more than 10 seconds behind and skipped some audio, so the transcript has a gap. Other heavy apps may be slowing this ' + platform.words.computer + ' down.', chat: SHOW })
     }
     if (dropped % 20 === 1) console.warn(`[audio] ${role} processing is behind; dropped ${dropped} chunks so far`)
   }

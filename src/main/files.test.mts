@@ -8,7 +8,7 @@ import { dialog } from 'electron'
 import { freshUserData } from '../test/electron.ts'
 import { addModeFiles, referenceFor, sweepModeFiles } from './files.ts'
 import { getState, initState, patchState } from './state.ts'
-import { TAR } from './system.ts'
+import { TAR } from './platform/system.ts'
 
 test('sweepModeFiles: deletes stored files no mode uses, but not those a state.json.bad still names', () => {
   const dir = freshUserData()

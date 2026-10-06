@@ -74,7 +74,7 @@ const afterFrames = (n: number, fn: () => void): void => void requestAnimationFr
  * Re-sent when they move, resize, fade or come and go, and on every render of the caller, from its layout effects. A
  * caller that reports its size to main calls this first, so a smaller surface's blur goes before its window shrinks.
  */
-/** `ax`: how much of a window width change moves the surfaces (see mac-panel.ts): 0.5 centred, 0 or 1 pinned left or right. */
+/** `ax`: how much of a window width change moves the surfaces (see platform/mac/panel.ts): 0.5 centred, 0 or 1 pinned left or right. */
 export function useGlass(selector: string, active: boolean, ax = 0.5) {
   const measureNow = useRef<(() => void) | null>(null)
   useLayoutEffect(() => measureNow.current?.())

@@ -1,7 +1,8 @@
 import { app, BrowserWindow, nativeTheme, screen, type BrowserWindowConstructorOptions } from 'electron'
 import path from 'node:path'
 import { inCorner, phase, type State } from '../shared/state'
-import { makeKey, preventActivation, refitGlass } from './mac-panel'
+import { platform } from './platform'
+import type { WindowName as Name } from './platform/types'
 import { getState, patchState } from './state'
 
 /** The dev server's page under `electron-vite dev`. Never in a packaged app: whoever set it would become the trusted origin. */
@@ -13,7 +14,6 @@ export const originOf = (u: string) => {
 export const APP_ORIGIN = DEV_URL ? originOf(DEV_URL) : 'app://glint'
 const routeUrl = (route: string, query = '') => `${DEV_URL ?? 'app://glint/index.html'}#/${route}${query}`
 
-const isMac = process.platform === 'darwin'
 const CHAT_W = 646 // 640 of panel, plus the 3 px either side the page keeps for its failure ring
 /** The capsule and panel pages each keep 3 px round their surface, which already makes the 6 px gap between them. */
 const GAP = 0
@@ -32,12 +32,6 @@ const barWinW = () => Math.max(bar.w, BAR_WIN_W)
 /** The collapsed panel (input and notices) reports its own height; expanded ones are set here. */
 let panelH = 60
 
-type Name = 'controlBar' | 'chat' | 'onboarding' | 'settings' | 'followup'
-/** Settings and onboarding on macOS: no title bar or title, the window buttons inset over the page (styles.css). */
-const CHROMELESS = (name: Name): BrowserWindowConstructorOptions =>
-  isMac ? { titleBarStyle: 'hiddenInset' } : { titleBarStyle: 'hidden', titleBarOverlay: captionButtons(name) }
-const captionButtons = (name: Name) =>
-  ({ color: '#00000000', symbolColor: name === 'followup' || nativeTheme.shouldUseDarkColors ? '#ececf1' : '#1b1c23', height: 36 })
 const wins: Partial<Record<Name, BrowserWindow>> = {}
 export const getWin = (name: Name) => wins[name]
 
@@ -96,14 +90,14 @@ function createOverlay(name: 'controlBar' | 'chat') {
     hiddenInMissionControl: true,
     focusable: false,
     alwaysOnTop: true,
-    ...(isMac ? { type: 'panel' } : {}),
+    ...platform.window.overlay,
   })
   win.setAlwaysOnTop(true, 'modal-panel')
   if (name === 'chat') chatLevel = 'modal-panel'
   // Overlays live as long as the app phase says so. Ctrl+W (the Windows window menu) or Cmd+W while typing would
   // otherwise destroy the chat panel mid-session, taking mic capture and the thread with it.
   win.on('close', (e) => !quitting && e.preventDefault())
-  preventActivation(win)
+  platform.window.preventActivation(win)
   win.webContents.on('did-finish-load', () => patchState({ windowsLoaded: { [name]: true } }))
   // A crashed overlay is a blank window, and the chat one also captures the mic: reload it rather than
   // keep a "live" session that records nothing.
@@ -158,12 +152,12 @@ export function updateWindows(s: State) {
   if (quitting) return // a state change while quitting mustn't recreate an overlay that just closed
   if (nativeTheme.themeSource !== s.theme) {
     nativeTheme.themeSource = s.theme // each set repaints every window
-    if (!isMac) for (const n of ['settings', 'onboarding'] as const) wins[n]?.setTitleBarOverlay(captionButtons(n))
+    for (const n of ['settings', 'onboarding'] as const) if (wins[n]) platform.window.restyle(wins[n], n)
   }
   const inApp = phase(s) === 'app'
 
   if (!inApp && !wins.onboarding) {
-    const w = create('onboarding', { width: 1100, height: 720, minWidth: 760, minHeight: 560, ...CHROMELESS('onboarding') })
+    const w = create('onboarding', { width: 1100, height: 720, minWidth: 760, minHeight: 560, ...platform.window.chrome('onboarding') })
     w.on('close', () => app.quit()) // user closed it; destroy() doesn't emit 'close'
     w.once('ready-to-show', () => bringToFront(w))
   }
@@ -218,7 +212,7 @@ export function focusOverlay(name: 'chat' | 'controlBar'): boolean {
   win.setFocusable(true)
   // Always re-assert, even if Electron thinks it's key already: after a click in another overlay (the capsule's
   // chat-box button) macOS can still send the keys elsewhere, and a click into the input must fix that.
-  if (makeKey(win)) win.webContents.focus()
+  if (platform.window.makeKey(win)) win.webContents.focus()
   else win.focus() // focus() activates the app; makeKey keeps the user's app frontmost
   return true
 }
@@ -259,9 +253,7 @@ let barHit = true
 export function setBarHit(hit: unknown) {
   if (typeof hit !== 'boolean' || hit === barHit) return
   barHit = hit
-  // Windows forwards with a system-wide mouse hook on this thread: any stall here would freeze every app's mouse.
-  // Glint doesn't need forwarding there, since main polls the pointer for the page (watchHover).
-  wins.controlBar?.setIgnoreMouseEvents(!hit, isMac ? { forward: true } : undefined)
+  if (wins.controlBar) platform.window.clickThrough(wins.controlBar, !hit)
 }
 
 export function setBarSize(size: unknown) {
@@ -289,7 +281,7 @@ function setBoundsIfChanged(win: BrowserWindow | undefined, b: Electron.Rectangl
   const c = win.getBounds()
   if (c.x === b.x && c.y === b.y && c.width === b.width && c.height === b.height) return
   win.setBounds(b, animate && win.isVisible())
-  if (c.width !== b.width) refitGlass(win) // the blur moves with the page, which re-centres in the new width
+  if (c.width !== b.width) platform.window.refitGlass(win) // the blur moves with the page, which re-centres in the new width
 }
 
 /** Clamps into the work area unless a drag or resize is in progress. */
@@ -522,7 +514,7 @@ export function openFollowUp(id?: unknown) {
     bringToFront(existing)
     return
   }
-  const w = create('followup', { width: 920, height: 640, minWidth: 760, minHeight: 480, ...CHROMELESS('followup') }, sid ? `?id=${sid}` : '')
+  const w = create('followup', { width: 920, height: 640, minWidth: 760, minHeight: 480, ...platform.window.chrome('followup') }, sid ? `?id=${sid}` : '')
   w.once('ready-to-show', () => bringToFront(w))
 }
 
@@ -535,7 +527,7 @@ export function openSettings(page?: unknown) {
     bringToFront(existing)
     return
   }
-  const w = create('settings', { width: 920, height: 670, minWidth: 760, minHeight: 480, ...CHROMELESS('settings') }, p ? `?page=${p}` : '')
+  const w = create('settings', { width: 920, height: 670, minWidth: 760, minHeight: 480, ...platform.window.chrome('settings') }, p ? `?page=${p}` : '')
   w.once('ready-to-show', () => bringToFront(w))
   // Closing mid-recording skips the page's cleanup; without this every global hotkey stays off until relaunch.
   w.on('closed', () => patchState({ isRecordingShortcut: false }))

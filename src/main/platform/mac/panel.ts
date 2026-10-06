@@ -1,5 +1,6 @@
 import type { BrowserWindow } from 'electron'
 import koffi from 'koffi'
+import type { GlassRect } from '../types'
 
 // Electron's `type: 'panel'` still builds a plain NSWindow, and AppKit ignores the nonactivating-panel
 // mask on those (electron/electron#35815), so clicking an overlay activates Glint and greys out the app
@@ -45,7 +46,6 @@ function nsWindowOf(win: BrowserWindow) {
 
 /** Give the panel key focus without activating the app (Spotlight-style). Returns false if the caller should fall back. */
 export function makeKey(win: BrowserWindow): boolean {
-  if (process.platform !== 'darwin') return false
   try {
     const r = runtime()
     // Must not run inline: becoming key fires Electron's 'focus' handler, which re-enters JS while we're
@@ -60,7 +60,6 @@ export function makeKey(win: BrowserWindow): boolean {
 
 /** Stop clicks on this window from activating the app. Returns false if unsupported (logged, not thrown). */
 export function preventActivation(win: BrowserWindow): boolean {
-  if (process.platform !== 'darwin') return false
   try {
     const r = runtime()
     const nsWindow = nsWindowOf(win)
@@ -77,8 +76,6 @@ export function preventActivation(win: BrowserWindow): boolean {
   }
 }
 
-/** A surface of the page, in its CSS pixels (points), with its corner radius and opacity. */
-export interface GlassRect { x: number; y: number; w: number; h: number; r: number; a: number }
 const glass = new WeakMap<BrowserWindow, unknown[]>()
 /**
  * Each window's last rects, the page width they were measured at, and how much of a width change moves them: 0.5 for
@@ -92,7 +89,6 @@ const shapes = new WeakMap<BrowserWindow, { rects: GlassRect[]; vw: number; ax: 
  * whole-window vibrancy would show in the window's empty margins.
  */
 export function setGlass(win: BrowserWindow, rects: GlassRect[], vw: number, ax = 0.5) {
-  if (process.platform !== 'darwin') return
   shapes.set(win, { rects, vw, ax })
   refitGlass(win)
 }
@@ -103,7 +99,7 @@ export function setGlass(win: BrowserWindow, rects: GlassRect[], vw: number, ax 
  */
 export function refitGlass(win: BrowserWindow) {
   const last = shapes.get(win)
-  if (process.platform !== 'darwin' || !last) return
+  if (!last) return
   const { rects } = last
   try {
     const r = runtime()

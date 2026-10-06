@@ -4,8 +4,10 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { test } from 'node:test'
-import { commandsOf, hasHiddenControls, idleTty, psWrapper, wrapper } from './run.ts'
-import { POWERSHELL } from './system.ts'
+import { commandsOf, hasHiddenControls } from './run.ts'
+import { idleTty, wrapper } from './platform/mac/terminal.ts'
+import { POWERSHELL } from './platform/system.ts'
+import { psWrapper } from './platform/win/terminal.ts'
 
 test('commandsOf: a console block keeps only its prompted lines, without the prompt', () => {
   assert.equal(commandsOf('npm ci\nnpm run build\n'), 'npm ci\nnpm run build')

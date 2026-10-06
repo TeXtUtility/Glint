@@ -2,42 +2,28 @@
 // reads a PDF's text, and Windows' own text recognition (Windows.Media.Ocr, through PowerShell) reads scans and images.
 import { execFile, spawn } from 'node:child_process'
 import fs from 'node:fs'
-import os from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
 import { getDocumentProxy } from 'unpdf'
-import { htmlText, officeXmlText, rtfText } from '../shared/doctext'
-import { POWERSHELL, TAR } from './system'
+import { htmlText as fromHtml, isUtf8, officeXmlText, rtfText } from '../../../shared/doctext'
+import { withTemp } from '../../temp'
+import { IMAGES } from '../formats'
+import { POWERSHELL, TAR } from '../system'
+import type { FileProgress as Progress } from '../types'
 
 const run = promisify(execFile)
-type Progress = (p: { done: number; total: number; ocr: boolean }) => void
-
-async function withTemp<T>(fn: (tmp: string) => Promise<T>): Promise<T> {
-  const tmp = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'glint-'))
-  try {
-    return await fn(tmp)
-  } finally {
-    await fs.promises.rm(tmp, { recursive: true, force: true })
-  }
-}
 
 export const unzip = (file: string, into: string) => run(TAR, ['-xf', file, '-C', into], { timeout: 120_000, windowsHide: true })
 
-const decodeText = (buf: Buffer) => {
-  try {
-    return new TextDecoder('utf-8', { fatal: true }).decode(buf)
-  } catch {
-    return buf.toString('latin1')
-  }
-}
+const decodeText = (buf: Buffer) => (isUtf8(buf) ? buf.toString('utf8') : buf.toString('latin1'))
 
-export async function extractWin(file: string, ext: string, images: string[], onProgress?: Progress): Promise<{ text: string; pages?: number }> {
+export async function extract(file: string, ext: string, onProgress?: Progress): Promise<{ text: string; pages?: number }> {
   if (ext === 'pdf') return pdfText(file, onProgress)
-  if (images.includes(ext)) {
+  if (IMAGES.includes(ext)) {
     const [text] = Object.values(await recognize(file, 'image', [], onProgress))
     return { text: `[text recognized from the image]\n${text ?? ''}` }
   }
-  if (ext === 'html' || ext === 'htm') return { text: htmlText(decodeText(await fs.promises.readFile(file))) }
+  if (ext === 'html' || ext === 'htm') return { text: fromHtml(decodeText(await fs.promises.readFile(file))) }
   if (ext === 'rtf') return { text: rtfText((await fs.promises.readFile(file)).toString('latin1')) }
   if (ext === 'docx' || ext === 'odt') {
     return withTemp(async (tmp) => {
@@ -163,4 +149,4 @@ function recognize(file: string, kind: 'image' | 'pdf', pages: number[], onProgr
 }
 
 /** EPUB chapters (XHTML) as text, in order. */
-export const chaptersText = async (chapters: string[]) => (await Promise.all(chapters.map((c) => fs.promises.readFile(c, 'utf8')))).map(htmlText).join('\n\n')
+export const htmlText = async (files: string[]) => (await Promise.all(files.map((c) => fs.promises.readFile(c, 'utf8')))).map(fromHtml).join('\n\n')

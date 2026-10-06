@@ -5,6 +5,15 @@ const NAMED: Record<string, string> = {
   rsquo: '’', ldquo: '“', rdquo: '”', bull: '•', middot: '·', copy: '©', reg: '®', trade: '™', euro: '€', pound: '£',
 }
 
+export const isUtf8 = (buf: Uint8Array) => {
+  try {
+    new TextDecoder('utf-8', { fatal: true }).decode(buf)
+    return true
+  } catch {
+    return false
+  }
+}
+
 export function decodeEntities(s: string): string {
   return s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e: string) => {
     if (e[0] !== '#') return NAMED[e.toLowerCase()] ?? m

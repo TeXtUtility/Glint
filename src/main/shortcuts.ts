@@ -1,5 +1,6 @@
 import { globalShortcut } from 'electron'
-import { inCorner, nativeAccelerator, phase, type ShortcutAction, type State } from '../shared/state'
+import { inCorner, phase, type ShortcutAction, type State } from '../shared/state'
+import { platform } from './platform'
 import { patchState } from './state'
 
 // Most shortcuts are registered only while what they act on is on screen, so they don't take those keys from every
@@ -60,7 +61,7 @@ export function updateShortcuts(s: State, run: (action: ShortcutAction) => void)
       let ok = false
       try {
         // On the next tick: hiding a window inside Windows' hotkey callback flips it hidden and shown forever.
-        ok = globalShortcut.register(nativeAccelerator(acc, process.platform === 'darwin'), () => void setImmediate(() => run(action)))
+        ok = globalShortcut.register(platform.accelerator(acc), () => void setImmediate(() => run(action)))
         if (!ok) console.warn(`[shortcuts] ${acc} is taken by another app, or the system refuses it`)
       } catch (err) {
         console.warn(`[shortcuts] invalid accelerator ${acc}:`, err)

@@ -14,8 +14,9 @@ registerHooks({
     try {
       return next(specifier, context)
     } catch (err) {
-      if (!specifier.startsWith('.') || (err as NodeJS.ErrnoException).code !== 'ERR_MODULE_NOT_FOUND') throw err
-      return next(`${specifier}.ts`, context)
+      const code = (err as NodeJS.ErrnoException).code
+      if (!specifier.startsWith('.') || (code !== 'ERR_MODULE_NOT_FOUND' && code !== 'ERR_UNSUPPORTED_DIR_IMPORT')) throw err
+      return next(code === 'ERR_UNSUPPORTED_DIR_IMPORT' ? `${specifier}/index.ts` : `${specifier}.ts`, context)
     }
   },
 })

@@ -7,7 +7,7 @@ import path from 'node:path'
 import { after, mock, test } from 'node:test'
 import { workers } from '../test/node-worker.ts'
 import { fetchSherpaModel, loadLocalAsr, SHERPA_SHA256, unloadLocalAsr } from './stt.ts'
-import { TAR } from './system.ts'
+import { TAR } from './platform/system.ts'
 
 const FILES = ['encoder.int8.onnx', 'decoder.int8.onnx', 'joiner.int8.onnx', 'tokens.txt']
 const PARAKEET = 'sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8'

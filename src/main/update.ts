@@ -1,6 +1,6 @@
 // Updates rebuild from source: there's no signed release feed for electron-updater to use. The installer
-// (install.sh) downloads the offered commit, builds and copies it in, then signals Glint (SIGUSR2) and waits: Glint quits
-// once no session is live and its notes are written, and the installer swaps the app and reopens it.
+// (install.sh, install.ps1) downloads the offered commit, builds and copies it in, then asks Glint to quit and waits:
+// Glint quits once no session is live and its notes are written, and the installer swaps the app and reopens it.
 import { app } from 'electron'
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'
@@ -9,7 +9,7 @@ import { isNewer, type State } from '../shared/state'
 import { shellPath } from './ai'
 import { notesPending } from './history'
 import { getState, patchState, subscribe } from './state'
-import { POWERSHELL, psArgs } from './system'
+import { platform } from './platform'
 
 declare const __GLINT_COMMIT__: string // electron.vite.config.ts; blank outside a git checkout
 
@@ -26,24 +26,11 @@ const setUpdate = (u: State['update']) => patchState({ update: { version: undefi
 export function initUpdates() {
   setTimeout(() => void checkForUpdate(), 30_000) // shortly after launch, out of startup's way
   setInterval(() => void checkForUpdate(), 60 * 60_000)
-  // The installer sends this once the new build is copied in and waits for Glint to quit (install.sh, GLINT_PID).
-  process.on('SIGUSR2', builtAndWaiting)
-  // Windows has no SIGUSR2: install.ps1 leaves this file instead, also when it was run by hand.
-  if (process.platform === 'win32') {
-    const dir = app.getPath('userData')
-    const file = path.join(dir, QUIT_FILE)
-    fs.mkdirSync(dir, { recursive: true })
-    fs.rmSync(file, { force: true }) // left by an installer that ran while Glint didn't
-    // Polled: fs.watch never fired in copies started from the Start menu.
-    setInterval(() => {
-      if (!fs.existsSync(file)) return
-      try {
-        fs.rmSync(file, { force: true })
-      } catch {} // still being written: it's the request all the same
-      quitRequested = true
-      builtAndWaiting()
-    }, 2000).unref()
-  }
+  // Once the new build is copied in, the installer asks Glint to quit and waits.
+  platform.onQuitRequest(app.getPath('userData'), () => {
+    quitRequested = true
+    builtAndWaiting()
+  })
   subscribe(quitIfReady)
   // Asked for during a session: it starts now that the session has ended.
   subscribe((s) => s.update.status === 'queued' && !s.session && void installUpdate())
@@ -56,12 +43,11 @@ export function initUpdates() {
 }
 
 const NOTES_WAIT_MS = 2 * 60_000
-const QUIT_FILE = 'quit-for-update'
 let retry: NodeJS.Timeout | undefined
 let notesWaitFrom = 0
 /** The full commit of the update on offer: the installer builds exactly it, even if the branch has moved on since. */
 let offeredCommit = ''
-/** install.ps1 run by hand, not by Update: it waits for Glint to quit all the same. */
+/** An installer is waiting for Glint to quit, maybe one run by hand rather than by Update. */
 let quitRequested = false
 
 function builtAndWaiting() {
@@ -164,9 +150,8 @@ export async function installUpdate() {
     // Detached so it outlives Glint: the installer quits Glint near the end, then reopens the new build. The installer
     // comes from the offered commit too, and builds that commit (GLINT_COMMIT), not whatever the branch has by now.
     const env = { ...process.env, PATH: await shellPath(), GLINT_PID: String(process.pid), GLINT_BRANCH: branch, GLINT_COMMIT: offeredCommit }
-    const child = process.platform === 'win32'
-      ? spawn(POWERSHELL, psArgs(`irm '${RAW}/${offeredCommit || branch}/install.ps1' | iex`), { detached: true, windowsHide: true, stdio: ['ignore', out, out], env })
-      : spawn('/bin/bash', ['-c', `set -o pipefail; curl -fsSL "${RAW}/${offeredCommit || branch}/install.sh" | bash`], { detached: true, stdio: ['ignore', out, out], env })
+    const [file, args] = platform.installer(RAW, offeredCommit || branch)
+    const child = spawn(file, args, { detached: true, windowsHide: true, stdio: ['ignore', out, out], env })
     fs.closeSync(out)
     child.unref()
     child.on('error', (err) => setUpdate({ status: 'failed', ...offer, message: err.message }))
