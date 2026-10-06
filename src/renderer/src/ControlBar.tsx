@@ -9,7 +9,7 @@ import { GuessButton } from './ChatPanel'
 import { glint, isMac, opacityStyle, patch, useAppState, useGlass, useTick } from './glint'
 import { Icon } from './icons'
 import { usePlayback } from './mic'
-import { DraftTextarea, Presence, Segmented } from './ui'
+import { DashedEdge, DraftTextarea, Presence, Segmented } from './ui'
 
 // 1a Island: one capsule that holds every in-call control. Main sizes this window to what the page reports (the
 // capsule, the new-voice tray under it, an open popover and a tooltip), keeps the capsule centred, and hangs the
@@ -59,6 +59,7 @@ export function ControlBar() {
   return (
     <div ref={root} className="island" style={opacityStyle(s.opacity)}>
       <div className={`capsule surface ${s.isInvisible ? '' : 'on-share'} ${failure ? 'failing' : ''} ${faded ? 'faded' : ''} ${compact ? 'compact' : ''}`}>
+        <DashedEdge />
         <div className={`logo ${failure ? 'error' : streaming ? 'working' : ''} ${compact && live && !failure ? 'recording' : ''}`}
           data-tip={compact && failure ? failure : `${compact && live ? `Recording · ${formatElapsed(elapsedMs(s, Date.now()))} · ` : ''}Drag to move · click to show or hide the panel · double-click to reset`}
           onPointerDown={(e) => {
@@ -367,6 +368,7 @@ function MeetingOptions({ c, hidden, more: moved, closing, onClose }: { c: ItemC
   const [min, max, step] = OPACITY_RANGES.background
   return (
     <div className={`popover options ${s.isInvisible ? '' : 'on-share'} ${closing ? 'closing' : ''}`} role="dialog" aria-label="Meeting options">
+      <DashedEdge />
       <div className="options-head"><b>Meeting options</b><span>this call</span></div>
       {more.length > 0 && <div className="more-controls" aria-label="More controls">{more.map((id) => <CapsuleItemView key={id} id={id} c={c} />)}</div>}
       <div className="opt layout">
@@ -445,6 +447,7 @@ function FailLine({ line }: { line: string }) {
 function CallTray({ s, app }: { s: State; app: string }) {
   return (
     <div className={`tray surface call-tray ${s.isInvisible ? '' : 'on-share'} ${s.discreet ? 'faded' : ''}`} role="status">
+      <DashedEdge />
       <Icon name="mic" size={14} />
       <span className="tray-q"><b>{app}</b> call started</span>
       <button className="chip accent" onClick={() => glint.send('session:start')}>Take notes</button>
@@ -464,6 +467,7 @@ function NameTray({ s, prompt }: { s: State; prompt: NonNullable<State['nameProm
   return (
     <form className={`tray surface ${s.isInvisible ? '' : 'on-share'} ${s.discreet && !(s.aiFailure ?? s.audioError) ? 'faded' : ''}`}
       onSubmit={(e) => (e.preventDefault(), name.trim() && act(glint.invoke('voice:name', prompt.id, name)))}>
+      <DashedEdge />
       <span className="tray-q">Who's <b>{prompt.label}</b>?</span>
       <button type="button" className={`circle small ${on ? 'playing' : ''}`} aria-label={on ? 'Stop' : 'Play their voice'} data-tip={on ? 'Stop' : `Hear ${prompt.label} (${prompt.seconds} s)`}
         onClick={() => act(player.toggle(prompt.id))}>

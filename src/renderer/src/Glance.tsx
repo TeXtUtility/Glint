@@ -4,6 +4,7 @@ import type { State } from '../../shared/state'
 import { glint, opacityStyle } from './glint'
 import { Icon } from './icons'
 import { Markdown } from './Markdown'
+import { DashedEdge } from './ui'
 
 const DIM_AFTER_MS = 8_000
 const COLLAPSE_AFTER_MS = 60_000
@@ -63,6 +64,7 @@ export function Glance({ s, cue, error, onOpen, children }: {
 
   const card = hovered && (cue?.text || problem || s.namePrompt) && (
     <div className="glance-card">
+      <DashedEdge />
       {cue?.meta && <p className="meta">{cue.meta}</p>}
       {cue?.text && <div className="a"><Markdown text={cue.text} /></div>}
       {problem && <p className="error">{problem}</p>}
@@ -75,6 +77,7 @@ export function Glance({ s, cue, error, onOpen, children }: {
     // A failure is never just a dot: the strip turns red and says what went wrong, over any answer. The dot stays at
     // the corner end.
     <div className={`glance-strip ${showing || problem ? '' : 'dot-only'} ${problem ? 'failing' : ''}`} title={showing || problem ? undefined : dotTitle(dot)}>
+      <DashedEdge />
       <span className={`dot ${dot}`} />
       {problem ? <span className="glance-text">{problem}</span> : showing && <span key={cue!.id} className="glance-text">{line}</span>}
     </div>

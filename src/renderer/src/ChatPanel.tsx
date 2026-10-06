@@ -17,7 +17,7 @@ import { GhostPill } from './Ghost'
 import { Glance, type Cue } from './Glance'
 import { useCallCapture, useMicCapture, usePlayback } from './mic'
 import { withNote } from './screenshotNote'
-import { Presence, Segmented, Toast } from './ui'
+import { DashedEdge, Presence, Segmented, Toast } from './ui'
 
 const EMPTY_ASK_LABEL = 'Assist'
 const MOD = isMac ? '⌘' : 'Ctrl+'
@@ -542,6 +542,7 @@ export function ChatPanel() {
     <div ref={panelRef} className={`panel surface ${collapsed ? 'collapsed' : ''} ${s.isInvisible ? '' : 'on-share'} ${failing ? 'failing' : ''} ${s.discreet && !typing && !failing ? 'faded' : ''}`}
       style={opacityStyle(s.opacity)}
       onPointerDown={bumpActivity} onKeyDown={bumpActivity}>
+      <DashedEdge />
       {!detailOpen && (
         <div className="panel-head">
           <Segmented tabs label="View" value={collapsed ? null : chat.view}

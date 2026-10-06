@@ -34,14 +34,15 @@ export function initUpdates() {
     const file = path.join(dir, QUIT_FILE)
     fs.mkdirSync(dir, { recursive: true })
     fs.rmSync(file, { force: true }) // left by an installer that ran while Glint didn't
-    fs.watch(dir, (_e, name) => {
-      if (name !== QUIT_FILE || !fs.existsSync(file)) return
+    // Polled: fs.watch never fired in copies started from the Start menu.
+    setInterval(() => {
+      if (!fs.existsSync(file)) return
       try {
         fs.rmSync(file, { force: true })
       } catch {} // still being written: it's the request all the same
       quitRequested = true
       builtAndWaiting()
-    })
+    }, 2000).unref()
   }
   subscribe(quitIfReady)
   // Asked for during a session: it starts now that the session has ended.

@@ -1,7 +1,36 @@
 // Motion components ported from GodUI (godui.design) into plain React + styles.css: no Tailwind or animation library.
 // Their springs are reproduced as CSS linear() easings (--spring-* in styles.css).
 import { useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type ReactNode } from 'react'
-import { glint } from './glint'
+import { glint, isMac } from './glint'
+
+/** Dash plus gap, in px, as the CSS dashed border draws it at 1.5px. */
+const DASH_PERIOD = 7.5
+
+/** Invisible mode's dashed edge off a Mac: whole dashes round the perimeter, where a CSS border breaks up on curves. */
+export function DashedEdge() {
+  const svg = useRef<SVGSVGElement>(null)
+  useLayoutEffect(() => {
+    const el = svg.current
+    const rect = el?.firstElementChild as SVGRectElement | null
+    if (!el || !rect) return
+    const fit = () => {
+      const [w, h] = [el.clientWidth, el.clientHeight]
+      if (!w || !h || !el.parentElement) return
+      const r = Math.min(parseFloat(getComputedStyle(el.parentElement).borderTopLeftRadius) || 0, w / 2, h / 2)
+      const geometry = { x: 0.75, y: 0.75, width: w - 1.5, height: h - 1.5, rx: Math.max(0, r - 0.75) }
+      for (const [k, v] of Object.entries(geometry)) rect.setAttribute(k, String(v))
+      const len = rect.getTotalLength()
+      const period = len / Math.max(1, Math.round(len / DASH_PERIOD))
+      rect.style.strokeDasharray = `${period * 0.6} ${period * 0.4}`
+    }
+    fit()
+    const ro = new ResizeObserver(fit)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+  if (isMac) return null
+  return <svg ref={svg} className="edge" aria-hidden="true"><rect /></svg>
+}
 
 const TIP_DELAY_MS = 500
 /** Right after a tip hides, the next one shows at once, so sliding along a toolbar reads each button. */
