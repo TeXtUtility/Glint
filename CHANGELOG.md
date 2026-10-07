@@ -1,5 +1,6 @@
 ## Unreleased
 
+- **Nothing stays black when the background fades.** Menus, the speaker tray, code blocks and drop shadows follow the Background setting, the update dot lost its dark ring, and Ask and the send button are white on blue.
 - **Ghost writes lists.** Asked for bullets or steps, Ghost types them as "- " lines instead of splitting them into separate form fields.
 - **Glint is public, and installs with curl.** `curl -fsSL https://raw.githubusercontent.com/TeXtUtility/Glint/main/install.sh | bash`, with no GitHub CLI or sign-in. Update checks talk to GitHub over plain HTTPS. Its app ID is now io.github.textutility.glint. Copies installed before this don't see updates: install once with the line above.
 - **CI.** Every push and pull request runs the type check, the tests and a build on GitHub's Macs, and on Windows.

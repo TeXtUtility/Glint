@@ -77,7 +77,6 @@ html[data-route="controlBar"], html[data-route="chat"], html[data-route="followu
   --ok: #4cd98a;
   --glass-rgb: 28 29 36;
   --glass: rgba(28, 29, 36, 0.9);
-  --popover: rgba(34, 35, 44, 0.96);
   --glass-border: rgba(255, 255, 255, 0.07);
   --glass-hover: rgba(255, 255, 255, 0.08);
   --divider: rgba(255, 255, 255, 0.1);
@@ -203,7 +202,7 @@ html.glass .panel.surface.faded { background-color: rgb(var(--glass-rgb) / calc(
 .circle.toggle.on::before { scale: 1; opacity: 1; }
 .circle.toggle.on, .circle.toggle.on:hover { color: var(--accent-text); }
 .circle.toggle.ringed { color: rgba(236, 236, 241, 0.85); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25); }
-.circle .badge { position: absolute; top: 3px; right: 3px; width: 7px; height: 7px; border-radius: 50%; background: #9aa9ff; box-shadow: 0 0 0 2px rgb(var(--glass-rgb)); }
+.circle .badge { position: absolute; top: 3px; right: 3px; width: 7px; height: 7px; border-radius: 50%; background: #9aa9ff; }
 .circle.pause { color: rgba(236, 236, 241, 0.8); }
 :is(.capsule, .session-row).failing .circle.pause { color: rgba(255, 200, 200, 0.8); }
 .circle.stop { color: #ff8080; }
@@ -214,9 +213,9 @@ html.glass .panel.surface.faded { background-color: rgb(var(--glass-rgb) / calc(
 
 .pill { height: 32px; border-radius: 16px !important; padding: 0 12px !important; display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; flex: none; color: var(--text); }
 .pill kbd { font: 10.5px -apple-system, BlinkMacSystemFont, system-ui, sans-serif; opacity: 0.6; background: none; border: none; padding: 0; color: inherit; }
-.pill.ask { background: #7b8fff !important; color: #10121c; margin: 0 4px; }
+.pill.ask { background: #7b8fff !important; color: #fff; margin: 0 4px; }
 .pill.ask.stopping { background: var(--danger-tint) !important; color: var(--danger-text); }
-.capsule.failing .pill.ask { background: #ff6b6b !important; color: #1c0f10; }
+.capsule.failing .pill.ask { background: #ff6b6b !important; color: #fff; }
 .stop-glyph { width: 8px; height: 8px; border-radius: 2px; background: #ff5d5d; }
 .fail-msg { display: inline-flex; align-items: center; gap: 7px; color: var(--danger-text); font-size: 12px; max-width: 380px; margin-right: 8px; }
 .fail-msg span { overflow: hidden; text-overflow: ellipsis; color: #ffc2c2; }
@@ -224,7 +223,7 @@ html.glass .panel.surface.faded { background-color: rgb(var(--glass-rgb) / calc(
 
 /* "Who's Speaker 2?" hangs under the capsule. */
 .tray { height: 40px; border-radius: 20px; display: flex; align-items: center; gap: 8px; padding: 0 6px 0 14px; font-size: 12px; white-space: nowrap; animation: notice-in 0.18s var(--spring); }
-.tray.surface:not(.failing) { background: rgba(28, 29, 36, 0.94); }
+.tray.surface:not(.failing) { background: rgb(28 29 36 / calc(var(--glass-alpha, 0.9) + 0.04)); }
 .tray-q { margin-right: 2px; color: rgba(236, 236, 241, 0.6); }
 .tray-q b { color: #ececf1; }
 .tray .circle.small { background: rgba(255, 255, 255, 0.08) !important; }
@@ -235,8 +234,8 @@ html.glass .panel.surface.faded { background-color: rgb(var(--glass-rgb) / calc(
 
 /* Popovers and menus scale in from the control that opened them. */
 .popover, .menu {
-  position: absolute; z-index: 5; color: var(--text); background: var(--popover); border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45); animation: pop-in 0.12s var(--spring);
+  position: absolute; z-index: 5; color: var(--text); background: rgb(34 35 44 / calc(var(--glass-alpha, 0.9) + 0.06)); border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 12px 28px rgb(0 0 0 / calc(var(--glass-alpha, 0.9) * 0.5)); animation: pop-in 0.12s var(--spring);
 }
 @keyframes pop-in { from { opacity: 0; scale: 0.96; } }
 /* Meeting options takes the invisible edge too, with its own drop shadow in place of the ring. */
@@ -251,7 +250,7 @@ html.glass .panel.surface.faded { background-color: rgb(var(--glass-rgb) / calc(
 .badge.update { animation: dot-pulse 1.6s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .badge.update { animation: none; } }
 .opt-settings kbd { margin-left: auto; font: 11px -apple-system, BlinkMacSystemFont, system-ui, sans-serif; background: none; border: none; padding: 0; color: var(--faint); }
-.popover.options { border: 1px solid transparent; background-clip: padding-box; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55); transition: border-color 0.12s; --frost: var(--glass-alpha, 0.9); }
+.popover.options { border: 1px solid transparent; background-clip: padding-box; box-shadow: 0 24px 60px rgb(0 0 0 / calc(var(--glass-alpha, 0.9) * 0.6)); transition: border-color 0.12s; --frost: var(--glass-alpha, 0.9); }
 .popover.options.on-share { border-color: rgba(255, 255, 255, 0.14); }
 .surface .menu { border: 1.5px dashed rgba(154, 169, 255, 0.95); }
 .surface.on-share .menu { border: 1px solid rgba(255, 255, 255, 0.14); }
@@ -350,8 +349,8 @@ input[role="switch"]:disabled { opacity: 0.4; }
 .glance-card .name-row svg { color: #9aa9ff; flex: none; }
 .glance-card .name-row small { margin: 0 0 0 auto; font-size: 11px; color: rgba(236, 236, 241, 0.45); }
 /* The card's drop shadow needs room inside the window, on the sides away from the corner. */
-.glance:not(.ghost) .glance-card { box-shadow: 0 0 0 3px rgba(123, 143, 255, 0.14), 0 20px 50px rgba(0, 0, 0, 0.45); }
-.glance.on-share:not(.ghost) .glance-card { box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45); }
+.glance:not(.ghost) .glance-card { box-shadow: 0 0 0 3px rgba(123, 143, 255, 0.14), 0 20px 50px rgb(0 0 0 / calc(var(--glass-alpha, 0.9) * 0.5)); }
+.glance.on-share:not(.ghost) .glance-card { box-shadow: 0 20px 50px rgb(0 0 0 / calc(var(--glass-alpha, 0.9) * 0.5)); }
 .glance:not(.ghost):has(.glance-card).top-left { padding: 3px 50px 70px 3px; }
 .glance:not(.ghost):has(.glance-card).top-right { padding: 3px 3px 70px 50px; }
 .glance:not(.ghost):has(.glance-card).bottom-left { padding: 30px 50px 3px 3px; }
@@ -410,8 +409,8 @@ html.glass .ghost :is(.glance-strip, .glance-card):not(.failing) { background-co
 .field { flex: 1; min-height: 36px; border-radius: 18px; background: var(--chip); display: flex; align-items: center; padding: 0 16px; }
 .field textarea { flex: 1; resize: none; border: none; outline: none; background: transparent; font-size: 14px; line-height: 1.4; padding: 8px 0; max-height: 64px; user-select: text; }
 .field textarea::placeholder { color: var(--faint); }
-.circle.send { width: 36px; height: 36px; background: var(--accent) !important; color: #10121c; transition: scale 0.12s; }
-.circle.send:hover:not(:disabled) { color: #10121c; filter: brightness(1.12); }
+.circle.send { width: 36px; height: 36px; background: var(--accent) !important; color: #fff; transition: scale 0.12s; }
+.circle.send:hover:not(:disabled) { color: #fff; filter: brightness(1.12); }
 .circle.send:active { scale: 0.95; }
 .circle.send.stopping, .circle.send.stopping:hover { background: var(--danger-tint) !important; color: var(--danger); }
 .circle.send .swap { display: grid; animation: swap-in 0.12s var(--spring); }
@@ -483,7 +482,7 @@ html.glass .ghost :is(.glance-strip, .glance-card):not(.failing) { background-co
 @keyframes msg-in { from { opacity: 0; translate: 0 6px; } }
 .jump {
   position: absolute; bottom: 66px; left: 50%; translate: -50% 0; z-index: 4; display: flex !important; align-items: center; gap: 4px; height: 26px; padding: 0 12px !important;
-  border-radius: 13px !important; font-size: 12px; background: rgba(56, 58, 72, 0.96) !important; border: none !important; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+  border-radius: 13px !important; font-size: 12px; background: rgb(56 58 72 / calc(var(--glass-alpha, 0.9) + 0.06)) !important; border: none !important; box-shadow: 0 6px 18px rgb(0 0 0 / calc(var(--glass-alpha, 0.9) * 0.45));
   animation: msg-in 0.18s var(--spring);
 }
 @media (prefers-reduced-motion: reduce) { .msg.assistant .text.streaming .md > *, .msg.assistant .text.streaming .md li, .msg.fresh, .jump, .circle.send .swap { animation: none; } }
@@ -503,7 +502,7 @@ html.glass .ghost :is(.glance-strip, .glance-card):not(.failing) { background-co
 .panel button.who { font-weight: 600; border-radius: 4px !important; }
 .panel button.who:hover { background: var(--glass-hover) !important; }
 .panel button.who.unnamed { text-decoration: underline dotted rgba(236, 236, 241, 0.5); text-underline-offset: 3px; }
-.menu.speaker-menu { top: calc(100% + 4px); left: 0; min-width: 0; width: 210px; border-radius: 10px; padding: 5px; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5); }
+.menu.speaker-menu { top: calc(100% + 4px); left: 0; min-width: 0; width: 210px; border-radius: 10px; padding: 5px; box-shadow: 0 16px 40px rgb(0 0 0 / calc(var(--glass-alpha, 0.9) * 0.55)); }
 .speaker-menu button { gap: 8px; }
 .speaker-menu button:hover:not(:disabled) { background: rgba(123, 143, 255, 0.18) !important; }
 .panel button.who[aria-expanded="true"] { background: rgba(255, 255, 255, 0.1) !important; padding: 1px 5px !important; border-radius: 5px !important; }
@@ -549,8 +548,8 @@ html.glass .ghost :is(.glance-strip, .glance-card):not(.failing) { background-co
 .md pre code { background: none; padding: 0; }
 .md .code-block { margin: 0 0 8px; border: 1px solid var(--glass-border); border-radius: 10px; overflow: hidden; }
 .md .code-block pre { margin: 0; border: none; border-radius: 0; tab-size: 4; background: none; }
-[data-route="chat"] .md .code-block { background: #121319; border-color: rgba(255, 255, 255, 0.07); }
-[data-route="chat"] .md :not(pre) > code { background: #121319; font-size: 11.5px; padding: 1px 5px; border-radius: 4px; }
+[data-route="chat"] .md .code-block { background: rgb(18 19 25 / calc(var(--glass-alpha, 0.9) + 0.1)); border-color: rgba(255, 255, 255, 0.07); }
+[data-route="chat"] .md :not(pre) > code { background: rgb(18 19 25 / calc(var(--glass-alpha, 0.9) + 0.1)); font-size: 11.5px; padding: 1px 5px; border-radius: 4px; }
 /* Discreet: code chips and blocks fade with the glass round them. Solid, they'd sit on the faded panel as dark patches. */
 .panel.faded .md :is(:not(pre) > code, .code-block) { background-color: rgb(18 19 25 / calc(var(--glass-alpha, 0.9) * var(--idle-opacity, 0.35))); border-color: transparent; }
 .panel.faded .md .code-head { border-bottom-color: transparent; }
@@ -691,8 +690,8 @@ html.glass .ghost :is(.glance-strip, .glance-card):not(.failing) { background-co
 .date-foot .clear { color: rgba(236, 236, 241, 0.55); padding: 2px 0 !important; }
 .date-foot .clear:disabled { opacity: 0.4; }
 .date-foot .done { color: #9aa9ff; font-weight: 600; padding: 2px 0 !important; }
-.menu.owner-menu, .menu.speaker-menu { background: rgba(38, 39, 48, 0.98); }
-.menu.owner-menu { top: calc(100% + 4px); right: 0; left: auto; width: 230px; padding: 6px; box-shadow: 0 20px 50px rgba(0, 0, 0, 0.55); }
+.menu.owner-menu, .menu.speaker-menu { background: rgb(38 39 48 / calc(var(--glass-alpha, 0.9) + 0.08)); }
+.menu.owner-menu { top: calc(100% + 4px); right: 0; left: auto; width: 230px; padding: 6px; box-shadow: 0 20px 50px rgb(0 0 0 / calc(var(--glass-alpha, 0.9) * 0.6)); }
 .owner-menu button.on { font-weight: 400; background: rgba(123, 143, 255, 0.18) !important; }
 .owner-menu button.on svg { color: #9aa9ff; }
 .owner-menu button.unknown { color: rgba(236, 236, 241, 0.6); }
