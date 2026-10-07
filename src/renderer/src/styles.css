@@ -213,7 +213,7 @@ html.glass .panel.surface.faded { background-color: rgb(var(--glass-rgb) / calc(
 
 .pill { height: 32px; border-radius: 16px !important; padding: 0 12px !important; display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; flex: none; color: var(--text); }
 .pill kbd { font: 10.5px -apple-system, BlinkMacSystemFont, system-ui, sans-serif; opacity: 0.6; background: none; border: none; padding: 0; color: inherit; }
-.pill.ask { background: #7b8fff !important; color: #fff; margin: 0 4px; }
+.pill.ask { background: rgb(123 143 255 / calc(var(--glass-alpha, 0.9) + 0.1)) !important; color: #fff; margin: 0 4px; }
 .pill.ask.stopping { background: var(--danger-tint) !important; color: var(--danger-text); }
 .capsule.failing .pill.ask { background: #ff6b6b !important; color: #fff; }
 .stop-glyph { width: 8px; height: 8px; border-radius: 2px; background: #ff5d5d; }
@@ -409,7 +409,7 @@ html.glass .ghost :is(.glance-strip, .glance-card):not(.failing) { background-co
 .field { flex: 1; min-height: 36px; border-radius: 18px; background: var(--chip); display: flex; align-items: center; padding: 0 16px; }
 .field textarea { flex: 1; resize: none; border: none; outline: none; background: transparent; font-size: 14px; line-height: 1.4; padding: 8px 0; max-height: 64px; user-select: text; }
 .field textarea::placeholder { color: var(--faint); }
-.circle.send { width: 36px; height: 36px; background: var(--accent) !important; color: #fff; transition: scale 0.12s; }
+.circle.send { width: 36px; height: 36px; background: rgb(123 143 255 / calc(var(--glass-alpha, 0.9) + 0.1)) !important; color: #fff; transition: scale 0.12s; }
 .circle.send:hover:not(:disabled) { color: #fff; filter: brightness(1.12); }
 .circle.send:active { scale: 0.95; }
 .circle.send.stopping, .circle.send.stopping:hover { background: var(--danger-tint) !important; color: var(--danger); }
