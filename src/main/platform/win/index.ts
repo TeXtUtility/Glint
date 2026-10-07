@@ -6,7 +6,7 @@ import path from 'node:path'
 import { WINDOWS_PROMPT } from '../../../shared/prompt'
 import { nativeAccelerator } from '../../../shared/state'
 import { mediaAccess } from '../media'
-import { POWERSHELL, psArgs } from '../system'
+import { POWERSHELL, psArgs, system32 } from '../system'
 import type { Bgr, Platform, WindowName } from '../types'
 import * as calendar from './calendar'
 import { micUsers, openWindows } from './calls'
@@ -83,7 +83,20 @@ export const win: Platform = {
     }),
   shellPath,
   cliCommand,
-  installer: (raw, ref) => [POWERSHELL, psArgs(`irm '${raw}/${ref}/install.ps1' | iex`)],
+  // A detached PowerShell gets no console and quits without running anything, so cmd starts it. cmd is in the job Node
+  // ends along with Glint; PowerShell, its child, breaks away from it (libuv's job lets children's children go), so the
+  // installer outlives Glint quitting for it, while cmd's exit still reports an install that failed before then.
+  runInstaller(raw, ref, log, env) {
+    // -Command, not -EncodedCommand, which writes host lines and errors to the log as CLIXML. No double quotes inside.
+    const script = `$ProgressPreference = 'SilentlyContinue'; irm '${raw}/${ref}/install.ps1' | iex`
+    const out = fs.openSync(log, 'w')
+    try {
+      const ps = `"${POWERSHELL}" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "${script}"`
+      return spawn(system32('cmd.exe'), ['/d', '/s', '/c', `"${ps}"`], { windowsVerbatimArguments: true, windowsHide: true, stdio: ['ignore', out, out], env })
+    } finally {
+      fs.closeSync(out)
+    }
+  },
   // No SIGUSR2 here: install.ps1 leaves this file instead, also when it was run by hand.
   onQuitRequest(userData, quit) {
     const file = path.join(userData, 'quit-for-update')

@@ -59,8 +59,9 @@ test('installUpdate: the installer comes from the commit offered, and builds exa
   assert.ok(call)
   const [file, args, { env }] = call
   if (process.platform === 'win32') {
-    assert.match(file, /powershell\.exe$/)
-    assert.match(args.at(-1)!, new RegExp(`irm 'https://raw\\.githubusercontent\\.com/TeXtUtility/Glint/${sha}/install\\.ps1' \\| iex`))
+    // Through cmd, never a detached PowerShell, which quits without running anything.
+    assert.match(file, /cmd\.exe$/)
+    assert.ok(args.at(-1)!.endsWith(`; irm 'https://raw.githubusercontent.com/TeXtUtility/Glint/${sha}/install.ps1' | iex""`))
   } else {
     assert.equal(file, '/bin/bash')
     assert.match(args[1], new RegExp(`curl -fsSL "https://raw\\.githubusercontent\\.com/TeXtUtility/Glint/${sha}/install\\.sh" \\| bash`))

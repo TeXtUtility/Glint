@@ -2,7 +2,6 @@
 // (install.sh, install.ps1) downloads the offered commit, builds and copies it in, then asks Glint to quit and waits:
 // Glint quits once no session is live and its notes are written, and the installer swaps the app and reopens it.
 import { app } from 'electron'
-import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { isNewer, type State } from '../shared/state'
@@ -146,13 +145,10 @@ export async function installUpdate() {
   if (s.session) return setUpdate({ status: 'queued', ...offer })
   setUpdate({ status: 'installing', ...offer })
   try {
-    const out = fs.openSync(logFile(), 'w')
-    // Detached so it outlives Glint: the installer quits Glint near the end, then reopens the new build. The installer
-    // comes from the offered commit too, and builds that commit (GLINT_COMMIT), not whatever the branch has by now.
+    // It outlives Glint: the installer quits Glint near the end, then reopens the new build. The installer comes from
+    // the offered commit too, and builds that commit (GLINT_COMMIT), not whatever the branch has by now.
     const env = { ...process.env, PATH: await shellPath(), GLINT_PID: String(process.pid), GLINT_BRANCH: branch, GLINT_COMMIT: offeredCommit }
-    const [file, args] = platform.installer(RAW, offeredCommit || branch)
-    const child = spawn(file, args, { detached: true, windowsHide: true, stdio: ['ignore', out, out], env })
-    fs.closeSync(out)
+    const child = platform.runInstaller(RAW, offeredCommit || branch, logFile(), env)
     child.unref()
     child.on('error', (err) => setUpdate({ status: 'failed', ...offer, message: err.message }))
     // A successful install quits Glint before the installer exits, so reaching this at all means something went wrong.

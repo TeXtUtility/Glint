@@ -1,6 +1,7 @@
 // Glint on macOS.
 import { app, desktopCapturer, dialog, shell, systemPreferences } from 'electron'
 import { spawn } from 'node:child_process'
+import fs from 'node:fs'
 import { nativeAccelerator } from '../../../shared/state'
 import { flushState, getState, patchState } from '../../state'
 import { mediaAccess } from '../media'
@@ -114,7 +115,14 @@ export const mac: Platform = {
   say: (text) => spawn('/usr/bin/say', ['-r', '185', text]),
   shellPath,
   cliCommand,
-  installer: (raw, ref) => ['/bin/bash', ['-c', `set -o pipefail; curl -fsSL "${raw}/${ref}/install.sh" | bash`]],
+  runInstaller(raw, ref, log, env) {
+    const out = fs.openSync(log, 'w')
+    try {
+      return spawn('/bin/bash', ['-c', `set -o pipefail; curl -fsSL "${raw}/${ref}/install.sh" | bash`], { detached: true, stdio: ['ignore', out, out], env })
+    } finally {
+      fs.closeSync(out)
+    }
+  },
   // install.sh, started by Update with GLINT_PID.
   onQuitRequest: (_userData, quit) => void process.on('SIGUSR2', quit),
 }

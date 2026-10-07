@@ -109,8 +109,8 @@ export interface Platform {
   shellPath(): Promise<string>
   /** A CLI's program and leading arguments. */
   cliCommand(name: string, PATH: string): Promise<[string, string[]]>
-  /** The program and arguments that install `ref` (a commit or branch) from GitHub. */
-  installer(raw: string, ref: string): [string, string[]]
+  /** Starts the installer for `ref` (a commit or branch) from GitHub, output in `log`. It outlives Glint quitting for it. */
+  runInstaller(raw: string, ref: string, log: string, env: NodeJS.ProcessEnv): ChildProcess
   /** The installer asks Glint to quit once the new build is in place. */
   onQuitRequest(userData: string, quit: () => void): void
 }
