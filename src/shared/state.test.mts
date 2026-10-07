@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
-  applyPatch, CAPSULE_ITEMS, elapsedMs, formatElapsed, ghostHints, isNewer, loadPersisted, normalize, parsePersisted, PERSISTED_DEFAULTS, phase,
+  applyPatch, CAPSULE_ITEMS, DEFAULT_SHORTCUTS, elapsedMs, formatElapsed, ghostHints, isNewer, loadPersisted, normalize, parsePersisted, PERSISTED_DEFAULTS, phase,
   isSystemShortcut, nativeAccelerator, prettyAccelerator, RUNTIME_DEFAULTS, tidyDividers, toAccelerator, type State,
 } from './state.ts'
 
@@ -103,6 +103,22 @@ test('a Mac shortcut needs ⌘ or ⌃, and never takes the system ones', () => {
   }
   assert.equal(isSystemShortcut('CommandOrControl+Shift+Q', true), false)
   assert.equal(isSystemShortcut('CommandOrControl+Q', false), false)
+})
+
+test("a Windows shortcut never takes Windows' own", () => {
+  const k = (code: string, m: Partial<Record<'metaKey' | 'ctrlKey' | 'altKey' | 'shiftKey', boolean>> = {}) =>
+    ({ code, metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, ...m })
+  const win = (code: string, m: Parameters<typeof k>[1]) => isSystemShortcut(toAccelerator(k(code, m), false) as string, false)
+  assert.equal(win('KeyL', { metaKey: true }), true) // Win+L locks the PC
+  assert.equal(win('KeyS', { metaKey: true, shiftKey: true }), true) // snipping
+  assert.equal(win('F4', { altKey: true }), true)
+  assert.equal(win('Tab', { altKey: true }), true)
+  assert.equal(win('Escape', { ctrlKey: true, shiftKey: true }), true)
+  assert.equal(win('ArrowLeft', { ctrlKey: true, metaKey: true }), true) // previous desktop
+  assert.equal(win('Enter', { ctrlKey: true, metaKey: true }), true) // Narrator
+  assert.equal(win('KeyK', { metaKey: true, altKey: true }), true) // mute in a call
+  for (const [action, acc] of Object.entries(DEFAULT_SHORTCUTS)) if (acc) assert.equal(isSystemShortcut(acc, false), false, action)
+  assert.equal(isSystemShortcut('Control+L', true), false) // ⌃L is free on a Mac
 })
 
 test('modes: persisted and validated; a deleted active mode falls back to General', () => {

@@ -1,5 +1,5 @@
 // Keystrokes typed into any app, for Ghost on Windows: a listen-only keyboard hook on a thread of its own
-// (keys-worker.ts). Windows asks no permission, and has no secure input, so password fields are seen too.
+// (keys-worker.ts). Windows asks no permission; keys typed in a password box are left out there (secure-field.ts).
 import koffi from 'koffi'
 import type { Worker } from 'node:worker_threads'
 import type { KeyInput } from '../types'

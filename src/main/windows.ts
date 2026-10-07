@@ -177,7 +177,7 @@ export function updateWindows(s: State) {
     for (const w of BrowserWindow.getAllWindows()) w.setContentProtection(protect)
   }
 
-  if (s.isInvisible && s.lockFocusWhenInvisible) (blurChat(), blurOverlay('controlBar'))
+  if (focusLocked(s)) (blurChat(), blurOverlay('controlBar'))
   place()
   const glance = inCorner(s)
   watchHover(inApp && s.overlayVisible) // Glance's hover card and every overlay tooltip need it
@@ -205,24 +205,19 @@ function bringToFront(w: BrowserWindow) {
 
 // Overlays only take key focus while the user types: in the chat, or in the capsule's tray and Meeting options.
 
+const focusLocked = (s: State) => s.isInvisible && s.lockFocusWhenInvisible
+
 export function focusOverlay(name: 'chat' | 'controlBar'): boolean {
-  const s = getState()
   const win = wins[name]
-  if (!win || (s.isInvisible && s.lockFocusWhenInvisible)) return false
-  win.setFocusable(true)
-  // Always re-assert, even if Electron thinks it's key already: after a click in another overlay (the capsule's
-  // chat-box button) macOS can still send the keys elsewhere, and a click into the input must fix that.
-  if (platform.window.makeKey(win)) win.webContents.focus()
-  else win.focus() // focus() activates the app; makeKey keeps the user's app frontmost
+  if (!win || focusLocked(getState())) return false
+  platform.window.takeFocus(win)
   return true
 }
 export const focusChat = () => focusOverlay('chat')
 
 export function blurOverlay(name: 'chat' | 'controlBar') {
   const win = wins[name]
-  if (!win?.isFocusable()) return
-  win.blur()
-  win.setFocusable(false)
+  if (win) platform.window.dropFocus(win)
 }
 export const blurChat = () => blurOverlay('chat')
 

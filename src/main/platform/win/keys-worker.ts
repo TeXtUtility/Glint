@@ -1,9 +1,10 @@
 // Windows: a listen-only low-level keyboard hook, on a thread of its own so Windows never drops it for answering late.
-// Every key goes on to the app it was typed in. Ended by WM_QUIT (stopKeys).
+// Every key goes on to the app it was typed in; none typed in a password box is seen. Ended by WM_QUIT (stopKeys).
 import koffi from 'koffi'
 import { parentPort } from 'node:worker_threads'
 import { ControlDoubleTap } from '../../../shared/typing'
 import { parseWinKey } from './keys-parse'
+import { watchSecureFields } from './secure-field'
 
 const user32 = koffi.load('user32.dll')
 const kernel32 = koffi.load('kernel32.dll')
@@ -37,6 +38,14 @@ function text(vk: number, scan: number): string {
   return n > 0 ? String.fromCharCode(...buf.subarray(0, n)) : ''
 }
 
+let secure = false
+let stopSecure = () => {}
+try {
+  stopSecure = watchSecureFields((s) => (secure = s))
+} catch (err) {
+  parentPort!.postMessage({ t: 'error', message: `password boxes can't be told apart: ${err}` })
+}
+
 let hook: unknown = null
 const callback = koffi.register((code: number, wParam: number, info: unknown) => {
   try {
@@ -50,6 +59,7 @@ const callback = koffi.register((code: number, wParam: number, info: unknown) =>
         if (down) taps.flags(CONTROLS.some(isDown), true, now)
       } else if (down) {
         taps.key()
+        if (secure) return nextHook(hook, code, wParam, info)
         const mods = { ctrl: isDown(VK.control), alt: isDown(VK.alt), win: isDown(VK.lwin) || isDown(VK.rwin), altGr: isDown(VK.ralt) }
         const key = parseWinKey(vk, mods, text(vk, scan))
         if (key) parentPort!.postMessage({ t: 'key', key })
@@ -66,5 +76,6 @@ parentPort!.postMessage(hook ? { t: 'ready', thread: threadId() } : { t: 'error'
 const msg = new Uint8Array(48)
 if (hook) while (getMessage(msg, null, 0, 0) > 0);
 if (hook) unhook(hook)
+stopSecure()
 koffi.unregister(callback)
 process.exit(0)

@@ -1,11 +1,13 @@
 // Mode files on Windows, with what it ships instead of macOS's: tar.exe opens .docx, .odt and .epub, PDF.js (unpdf)
-// reads a PDF's text, and Windows' own text recognition (Windows.Media.Ocr, through PowerShell) reads scans and images.
+// reads a PDF's text, Windows' own text recognition (Windows.Media.Ocr, through PowerShell) reads scans and images,
+// and binarydocs.ts reads Word 97-2003 and web archives.
 import { execFile, spawn } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { promisify } from 'node:util'
 import { getDocumentProxy } from 'unpdf'
-import { htmlText as fromHtml, isUtf8, officeXmlText, rtfText } from '../../../shared/doctext'
+import { webArchiveHtml, wordDocText } from '../../../shared/binarydocs'
+import { htmlText as fromHtml, isUtf8, officeXmlText, rtfText, wordMlText } from '../../../shared/doctext'
 import { withTemp } from '../../temp'
 import { IMAGES } from '../formats'
 import { POWERSHELL, TAR } from '../system'
@@ -33,6 +35,13 @@ export async function extract(file: string, ext: string, onProgress?: Progress):
       return { text: officeXmlText(await fs.promises.readFile(xml, 'utf8')) }
     })
   }
+  if (ext === 'doc') {
+    const b = await fs.promises.readFile(file)
+    if (b[0] === 0x7b && b[1] === 0x5c) return { text: rtfText(b.toString('latin1')) } // RTF saved with a .doc name
+    return { text: wordDocText(new Uint8Array(b)) }
+  }
+  if (ext === 'wordml') return { text: wordMlText(decodeText(await fs.promises.readFile(file))) }
+  if (ext === 'webarchive') return { text: fromHtml(webArchiveHtml(new Uint8Array(await fs.promises.readFile(file)))) }
   throw new Error("can't be read on Windows: save it as .docx or PDF, or add it as plain text")
 }
 

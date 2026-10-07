@@ -48,6 +48,14 @@ export function officeXmlText(xml: string): string {
   return decodeEntities(body)
 }
 
+/** A Word 2003 XML document (.wordml): its body, without the pictures embedded in it. */
+export function wordMlText(xml: string): string {
+  const from = xml.indexOf('<w:body')
+  const to = xml.lastIndexOf('</w:body>')
+  const body = from >= 0 && to > from ? xml.slice(from, to) : xml
+  return officeXmlText(body.replace(new RegExp('<w:binData[^>]*>[^<]*</w:binData>', 'g'), ''))
+}
+
 /** Skipped whole: fonts, colours, styles, metadata, pictures, and anything marked \* as ignorable. */
 const RTF_SKIP = new Set(['fonttbl', 'colortbl', 'stylesheet', 'info', 'pict', 'header', 'footer', 'listtable', 'listoverridetable', 'rsidtbl', 'xmlnstbl', 'themedata', 'datastore', 'latentstyles'])
 

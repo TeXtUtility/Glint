@@ -8,8 +8,10 @@ import { nativeAccelerator } from '../../../shared/state'
 import { mediaAccess } from '../media'
 import { POWERSHELL, psArgs } from '../system'
 import type { Bgr, Platform, WindowName } from '../types'
+import * as calendar from './calendar'
 import { micUsers, openWindows } from './calls'
 import { cliCommand, shellPath } from './cli'
+import { dropFocus, preventActivation, takeFocus } from './focus'
 import * as files from './files'
 import { stopKeys, watchKeys } from './keys'
 import { runInTerminal, terminals } from './terminal'
@@ -46,8 +48,9 @@ export const win: Platform = {
     // Forwarding works through a system-wide mouse hook on main's thread: any stall there would freeze every app's
     // mouse. Glint doesn't need it here, since main polls the pointer for the page (watchHover).
     clickThrough: (w, ignore) => w.setIgnoreMouseEvents(ignore),
-    makeKey: () => false,
-    preventActivation: () => {},
+    preventActivation,
+    takeFocus,
+    dropFocus,
     setGlass: () => {},
     refitGlass: () => {},
   },
@@ -72,7 +75,7 @@ export const win: Platform = {
   terminals,
   runInTerminal,
   files,
-  calendar: null,
+  calendar: { access: calendar.access, request: calendar.request, events: calendar.events, openSettings: () => {} }, // Outlook asks nothing
   say: (text) =>
     spawn(POWERSHELL, psArgs('Add-Type -AssemblyName System.Speech; $s = New-Object System.Speech.Synthesis.SpeechSynthesizer; $s.Rate = 1; $s.Speak($env:GLINT_SAY)'), {
       env: { ...process.env, GLINT_SAY: text },

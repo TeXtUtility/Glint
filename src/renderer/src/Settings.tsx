@@ -181,7 +181,7 @@ function General({ s, onReleaseNotes }: { s: State; onReleaseNotes: () => void }
           <Row label="Follow my typing"
             hint={isMac
               ? "Ghost moves along as you type the answer in any app, so macOS asks to let Glint see keystrokes (Input Monitoring). Keys only move the strip: they're never saved or sent anywhere, and password fields are never seen."
-              : "Ghost moves along as you type the answer in any app, so Glint sees keystrokes while Ghost is on screen. Keys only move the strip: they're never saved or sent anywhere. Windows doesn't hide password fields from it, so hide Ghost before typing one."}>
+              : "Ghost moves along as you type the answer in any app, so Glint sees keystrokes while Ghost is on screen. Keys only move the strip: they're never saved or sent anywhere, and password fields are never seen."}>
             {s.keysAllowed ? <span className="muted">Allowed</span> : <button onClick={() => glint.send('keys:request')}>Allow</button>}
           </Row>
         )}
@@ -1130,10 +1130,15 @@ function CalendarRow() {
   const allow = () => void glint.invoke<'granted' | 'denied' | 'ask'>('calendar:allow').then(setAccess)
   return (
     <Row label="Calendar invites"
-      hint={access === 'denied'
-        ? 'Glint can\'t read your calendars. Allow it in System Settings → Privacy & Security → Calendars, then come back.'
-        : 'Guess matches speakers to the people on the invite for the meeting you\'re in. Only that invite is read, on this Mac, when you press Guess.'}>
-      {access === 'granted' ? <span className="muted">Allowed</span> : access && <button onClick={allow}>{access === 'denied' ? 'Open System Settings' : 'Allow'}</button>}
+      hint={!isMac
+        ? access === 'denied'
+          ? 'Glint reads invites from classic Outlook, which isn\'t on this PC.'
+          : 'Guess matches speakers to the people on the invite for the meeting you\'re in. Only that invite is read, from Outlook on this PC, when you press Guess.'
+        : access === 'denied'
+          ? 'Glint can\'t read your calendars. Allow it in System Settings → Privacy & Security → Calendars, then come back.'
+          : 'Guess matches speakers to the people on the invite for the meeting you\'re in. Only that invite is read, on this Mac, when you press Guess.'}>
+      {access === 'granted' ? <span className="muted">{isMac ? 'Allowed' : 'Outlook'}</span>
+        : access && isMac && <button onClick={allow}>{access === 'denied' ? 'Open System Settings' : 'Allow'}</button>}
     </Row>
   )
 }
@@ -1156,7 +1161,7 @@ function Voice({ s }: { s: State }) {
       <Toggle label="Room mode" checked={s.roomMode && s.voiceprint === 'enrolled'} disabled={s.voiceprint !== 'enrolled'} onChange={(v) => patch({ roomMode: v })}
         hint={<>For meetings in person, where one mic hears everyone: your voice tells you apart. {s.voiceprint !== 'enrolled' ? 'Record your voice first.' : isMac ? 'If macOS Mic Mode is Voice Isolation, other people get filtered out; set it to Standard.' : 'If Windows Studio Effects has voice focus on, other people get filtered out; turn it off.'}</>} />
       <Toggle label="Speaker labels" hint={'Split "Them" into named people · also on the overlay'} checked={s.speakerLabels} onChange={(v) => patch({ speakerLabels: v })} />
-      {isMac && <CalendarRow />}
+      <CalendarRow />
 
       <Section title={`People Glint knows · ${s.people.length}`} aside={<small>Save a voice only with that person's agreement</small>}>
         {s.people.length ? s.people.map((p) => <PersonRow key={p.id} p={p} player={player} />) : (
@@ -1410,7 +1415,7 @@ function Shortcuts({ s }: { s: State }) {
         const why = e.altKey ? ": macOS won't give ⌥ alone to an app, and it types accents" : ''
         return setNote({ action, text: isMac ? `Include ⌘ or ⌃${why}.` : 'Include Ctrl, Win or Alt.' })
       }
-      if (isSystemShortcut(acc, isMac)) return setNote({ action, text: 'Used by macOS in every app.' })
+      if (isSystemShortcut(acc, isMac)) return setNote({ action, text: `Used by ${OS} in every app.` })
       const owner = ownerOf(acc, action)
       if (owner) return setNote({ action, text: `Already used for "${LABELS[owner]}".` })
       setNote(clashesWithEditing(acc) ? { action, text: 'Saved, but this replaces a common editing shortcut in every app.' } : null)

@@ -59,8 +59,19 @@ export const mac: Platform = {
     restyle: () => {},
     overlay: { type: 'panel' },
     clickThrough: (win, ignore) => win.setIgnoreMouseEvents(ignore, { forward: true }),
-    makeKey,
     preventActivation,
+    takeFocus(win) {
+      win.setFocusable(true)
+      // Always re-assert, even if Electron thinks it's key already: after a click in another overlay (the capsule's
+      // chat-box button) macOS can still send the keys elsewhere, and a click into the input must fix that.
+      if (makeKey(win)) win.webContents.focus()
+      else win.focus() // focus() activates the app; makeKey keeps the user's app frontmost
+    },
+    dropFocus(win) {
+      if (!win.isFocusable()) return
+      win.blur()
+      win.setFocusable(false)
+    },
     setGlass,
     refitGlass,
   },

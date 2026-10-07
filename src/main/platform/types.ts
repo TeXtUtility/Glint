@@ -43,9 +43,12 @@ export interface Platform {
     overlay: BrowserWindowConstructorOptions
     /** `ignore`: clicks go through the window to whatever is under it. */
     clickThrough(win: BrowserWindow, ignore: boolean): void
-    /** Key focus without activating Glint; false if the caller should focus the usual way. */
-    makeKey(win: BrowserWindow): boolean
+    /** Clicks reach the window without activating Glint, as on a Mac panel. */
     preventActivation(win: BrowserWindow): void
+    /** The keys, for typing in an overlay, keeping the user's app in front where the OS can. */
+    takeFocus(win: BrowserWindow): void
+    /** The keys back to the app the user was in; clicks still reach the window. */
+    dropFocus(win: BrowserWindow): void
     setGlass(win: BrowserWindow, rects: GlassRect[], vw: number, ax: number): void
     refitGlass(win: BrowserWindow): void
   }

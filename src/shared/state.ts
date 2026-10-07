@@ -702,7 +702,18 @@ const EDITING = ['A', 'C', 'V', 'X', 'Z', 'S', 'F', 'Shift+Z', 'Left', 'Right', 
 export const clashesWithEditing = (acc: string) => EDITING.includes(acc)
 /** Quit, close, hide, minimise and Force Quit: macOS's own in every app, so never recorded. */
 const MAC_SYSTEM = ['Q', 'W', 'H', 'M', 'Alt+Escape'].map((k) => `CommandOrControl+${k}`)
-export const isSystemShortcut = (acc: string, isMac: boolean) => isMac && MAC_SYSTEM.includes(acc)
+/** Windows' own (Control is the Win key): window switching, Start, Task Manager, desktops, Narrator, Game Bar. */
+const WIN_SYSTEM = [
+  'Alt+F4', 'Alt+Tab', 'Alt+Shift+Tab', 'Alt+Escape', 'Alt+Space',
+  'CommandOrControl+Escape', 'CommandOrControl+Shift+Escape', 'CommandOrControl+Alt+Delete', 'CommandOrControl+Alt+Tab',
+  ...['Left', 'Right', 'D', 'F4', 'O', 'Enter', 'C', 'S', 'N', 'Shift+B'].map((k) => `CommandOrControl+Control+${k}`),
+  ...['R', 'K', 'B', 'D', 'G'].map((k) => `Control+Alt+${k}`),
+]
+export function isSystemShortcut(acc: string, isMac: boolean): boolean {
+  if (isMac) return MAC_SYSTEM.includes(acc)
+  const mods = acc.split('+').slice(0, -1).join('+')
+  return mods === 'Control' || mods === 'Control+Shift' || WIN_SYSTEM.includes(acc) // Windows keeps nearly every Win+key
+}
 
 export function prettyAccelerator(acc: string, isMac: boolean): string {
   const map: Record<string, string> = isMac
