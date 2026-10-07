@@ -102,7 +102,7 @@ function Install-Glint {
     try {
       Move-Item $staged $dest
     } catch {
-      if (Test-Path $old) { Move-Item $old $dest; Start-Process "$dest\Glint.exe" }
+      if (Test-Path $old) { Move-Item $old $dest; Start-Process "$dest\Glint.exe" -WorkingDirectory $dest }
       Die "couldn't move the new Glint into $dest; the previous version was reopened."
     }
     Remove-Item -Recurse -Force $old -ErrorAction SilentlyContinue
@@ -121,7 +121,8 @@ function Install-Glint {
     Set-ItemProperty $key NoRepair 1 -Type DWord
 
     Step "Done: Glint $version is installed. Opening it."
-    Start-Process "$dest\Glint.exe"
+    # Not from here: Glint would keep the download's folder as its working directory, and it couldn't be deleted.
+    Start-Process "$dest\Glint.exe" -WorkingDirectory $dest
   } finally {
     Pop-Location
     foreach ($t in $temp) { Remove-Item -Recurse -Force $t -ErrorAction SilentlyContinue }
