@@ -17,7 +17,7 @@ const PERMS = isMac
 type Step = 'welcome' | 'permissions' | 'demos'
 const STEP_LABELS: Record<Step, string> = { welcome: 'Welcome', permissions: 'Permissions', demos: 'Try it' }
 
-// ponytail: sign-in and plan selection (spec §15 steps 1 and 4) come with auth and billing.
+// ponytail: sign-in and plan selection come with auth and billing.
 export function Onboarding() {
   const s = useAppState()
   const [step, setStep] = useState<Step | null>(null)

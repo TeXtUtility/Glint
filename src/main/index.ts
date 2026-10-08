@@ -85,7 +85,7 @@ function handleLink(raw: string) {
   const [area, page] = [url.host, ...url.pathname.split('/').filter(Boolean)]
   // Any web page can fire a glint:// link, so only known links do anything, and none shows the overlay (a page could
   // fire one mid screen-share).
-  // ponytail: glint://auth/* (spec §17) needs an auth provider to hand the token to, and there isn't one yet.
+  // ponytail: glint://auth/* needs an auth provider to hand the token to, and there isn't one yet.
   if (area !== 'settings') return
   openSettings(page)
 }

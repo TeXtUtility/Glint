@@ -132,7 +132,7 @@ export function ChatPanel() {
     const replyId = `${id}:reply`
     lastAskAt.current = Date.now()
     if (!brief && !typeable) void patch({ chat: { visible: true, expanded: true, view: 'chat' } }) // the capsule's Ask can come with the panel hidden
-    // ponytail: paywall check goes here once billing exists (spec §11d).
+    // ponytail: paywall check goes here once billing exists.
 
     abortRef.current?.abort()
     const ctrl = new AbortController()

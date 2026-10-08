@@ -79,7 +79,7 @@ export function Dashboard({ s, openId, setOpenId, onContinue }: {
 
   if (openId) return <SessionDetail key={openId} id={openId} s={s} onBack={() => setOpenId(null)} onContinue={onContinue} />
 
-  // ponytail: everything is local, so no pagination (spec §13 wants 12 per page) until lists get long enough to feel slow.
+  // ponytail: everything is local, so no pagination until lists get long enough to feel slow.
   const days = byDay(list ?? [], query)
 
   return (
