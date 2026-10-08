@@ -223,6 +223,9 @@ function General({ s, onReleaseNotes }: { s: State; onReleaseNotes: () => void }
           <Segmented<AutoCopy> label="Copy replies automatically" value={s.autoCopy} onChange={(autoCopy) => patch({ autoCopy })}
             options={[{ value: 'off', label: 'Off' }, { value: 'reply', label: 'Reply' }, { value: 'code', label: 'Code', tip: 'Only the first code block' }]} />
         </Row>
+        <Toggle label="Save chats outside sessions"
+          hint="Questions asked with no session running are kept in History, named after the first one. Off, such a chat isn't saved: it lasts until New chat or quitting Glint. Chats during a session are always kept with it."
+          checked={s.saveChats} onChange={(v) => patch({ saveChats: v })} />
         <TerminalRow s={s} />
       </Section>
 

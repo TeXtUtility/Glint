@@ -832,6 +832,15 @@ button.hold:active { scale: 0.99; }
 .hold-labels > span { grid-area: 1 / 1; display: inline-flex; align-items: center; justify-content: center; gap: 5px; white-space: nowrap; visibility: hidden; }
 .hold-labels > span.on { visibility: visible; }
 .hold path { stroke-width: 2.5; }
+/* Icon only (a History row's Move to Trash): the fill sweeps the icon's square. */
+button.hold-icon { padding: 6px !important; border-radius: 8px !important; background: transparent !important; color: var(--muted); }
+button.hold-icon:is(:hover, :focus-visible, [data-status="holding"], [data-status="done"]) { color: var(--danger); }
+.history-item { position: relative; }
+.history-item > .hold-icon { position: absolute; right: 6px; top: 50%; translate: 0 -50%; opacity: 0; transition: opacity 0.12s, scale 0.12s; }
+.history-item:is(:hover, :focus-within) > .hold-icon { opacity: 1; }
+/* The button takes the panel row's status spot, and titles end before it. */
+.history-item:is(:hover, :focus-within) .session-row .status { visibility: hidden; }
+.history-item:is(:hover, :focus-within) :is(.session-main, .fw-row-title) { padding-right: 28px; }
 
 /* ── Settings (4a–4e): its own window shell, following the Light/Dark theme. The shared colour names are redefined
    here so every control (segmented, hold-to-confirm, tooltips, code) picks the Settings palette up. ── */

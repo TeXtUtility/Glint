@@ -50,6 +50,15 @@ export function byDay(list: SessionSummary[], query: string) {
   return days
 }
 
+/** A History row's Move to Trash (hold), over its right end while the row is pointed at. Not on the live session. */
+export function TrashRow({ r, onError }: { r: SessionSummary; onError: (message: string) => void }) {
+  const name = r.title || (isChatId(r.id) ? 'Untitled chat' : 'Untitled session')
+  return (
+    <ConfirmButton icon={<Icon name="trash" size={14} />} label={`Move "${name}" to Trash`} confirmLabel="Move to Trash"
+      onConfirm={() => void glint.invoke('sessions:trash', r.id).catch((err: Error) => onError(err.message))} />
+  )
+}
+
 /** What a history row says on its right: live, a chat to continue, notes in progress, or the to-dos left. */
 function rowStatus(r: SessionSummary, live: boolean): { label: string; kind: string } | null {
   if (live) return { label: 'Live', kind: 'live' }
@@ -74,7 +83,7 @@ export function Dashboard({ s, openId, setOpenId, onContinue }: {
     glint.invoke<{ sessions: SessionSummary[]; unreadable: number }>('sessions:list').then((r) => {
       setList(r.sessions)
       setUnreadable(r.unreadable)
-    }, (err: Error) => setError(err.message))
+    }, (err: Error) => setError(`Couldn't load history: ${err.message}`))
   }, [s.historyVersion])
 
   if (openId) return <SessionDetail key={openId} id={openId} s={s} onBack={() => setOpenId(null)} onContinue={onContinue} />
@@ -89,7 +98,7 @@ export function Dashboard({ s, openId, setOpenId, onContinue }: {
         <input type="search" placeholder="Search titles, summaries and tags" aria-label="Search history"
           value={query} onMouseDown={wantFocus} onChange={(e) => setQuery(e.target.value)} />
       </label>
-      {error && <p className="error">Couldn't load history: {error}</p>}
+      {error && <p className="error">{error}</p>}
       {unreadable > 0 && (
         <p className="muted">
           {unreadable === 1 ? '1 saved session' : `${unreadable} saved sessions`} can't be opened: damaged, or encrypted with a
@@ -97,24 +106,30 @@ export function Dashboard({ s, openId, setOpenId, onContinue }: {
         </p>
       )}
       {list && !days.length && (
-        <p className="empty">{query.trim() ? 'Nothing matches.' : 'Nothing yet. Your chats appear here, and sessions you record appear with notes.'}</p>
+        <p className="empty">
+          {query.trim() ? 'Nothing matches.' : s.saveChats ? 'Nothing yet. Your chats appear here, and sessions you record appear with notes.' : 'Nothing yet. Sessions you record appear here with notes.'}
+        </p>
       )}
       {days.map(([label, rows]) => (
         <section key={label}>
           <h3 className="day">{label}</h3>
           {rows.map((r) => {
-            const status = rowStatus(r, s.session?.id === r.id)
+            const live = s.session?.id === r.id
+            const status = rowStatus(r, live)
             return (
-              <button key={r.id} className="session-row" onClick={() => setOpenId(r.id)}>
-                <span className="session-main">
-                  <span className="session-title">{r.title || (isChatId(r.id) ? 'Untitled chat' : 'Untitled session')}</span>
-                  <span className="session-meta">
-                    {time(r.startedAt)} · {isChatId(r.id) ? 'Chat' : s.session?.id === r.id ? `${formatElapsed(elapsedMs(s, Date.now()))} so far` : minutes(r.elapsedMs)}
-                    {!!r.tags?.length && <span className="tags">{r.tags.map((t) => <span key={t}>{t}</span>)}</span>}
+              <div key={r.id} className="history-item">
+                <button className="session-row" onClick={() => setOpenId(r.id)}>
+                  <span className="session-main">
+                    <span className="session-title">{r.title || (isChatId(r.id) ? 'Untitled chat' : 'Untitled session')}</span>
+                    <span className="session-meta">
+                      {time(r.startedAt)} · {isChatId(r.id) ? 'Chat' : s.session?.id === r.id ? `${formatElapsed(elapsedMs(s, Date.now()))} so far` : minutes(r.elapsedMs)}
+                      {!!r.tags?.length && <span className="tags">{r.tags.map((t) => <span key={t}>{t}</span>)}</span>}
+                    </span>
                   </span>
-                </span>
-                {status && <span className={`status ${status.kind}`}>{status.label}</span>}
-              </button>
+                  {status && <span className={`status ${status.kind}`}>{status.label}</span>}
+                </button>
+                {!live && <TrashRow r={r} onError={(m) => setError(`Couldn't move it to the Trash: ${m}`)} />}
+              </div>
             )
           })}
         </section>

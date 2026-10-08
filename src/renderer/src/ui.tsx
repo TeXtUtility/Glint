@@ -156,8 +156,13 @@ const HOLD_MS = 900
  * it back. Space or Enter held down works too. A quick click says to hold instead.
  * Not confirm(): native dialogs are separate OS windows that invisible mode can't hide from a screen share.
  */
-/** `quiet`: plain text at rest, a red pill only while held. */
-export function ConfirmButton({ label, confirmLabel, onConfirm, quiet }: { label: string; confirmLabel: string; onConfirm: () => void; quiet?: boolean }) {
+/**
+ * `quiet`: plain text at rest, a red pill only while held. `icon`: just the icon, `label` its name, for a row's action;
+ * the tooltip says to hold.
+ */
+export function ConfirmButton({ label, confirmLabel, onConfirm, quiet, icon, className = '' }: {
+  label: string; confirmLabel: string; onConfirm: () => void; quiet?: boolean; icon?: ReactNode; className?: string
+}) {
   const [status, setStatus] = useState<'idle' | 'holding' | 'hint' | 'done'>('idle')
   const timer = useRef(0)
   const startedAt = useRef(0)
@@ -184,9 +189,11 @@ export function ConfirmButton({ label, confirmLabel, onConfirm, quiet }: { label
   const isKey = (k: string) => k === ' ' || k === 'Enter'
 
   // Every label shares one grid cell, so the button is as wide as the longest and never jumps.
-  const labels = { idle: label, holding: confirmLabel, hint: 'Hold to confirm', done: 'Done' }
+  const labels: Record<typeof status, ReactNode> = icon ? { idle: icon, holding: icon, hint: icon, done: null }
+    : { idle: label, holding: confirmLabel, hint: 'Hold to confirm', done: 'Done' }
   return (
-    <button type="button" className={`hold ${quiet ? 'quiet' : ''}`} data-status={status} data-tip={`Press and hold: ${confirmLabel}`}
+    <button type="button" className={`hold ${quiet ? 'quiet' : ''} ${icon ? 'hold-icon' : ''} ${className}`} data-status={status}
+      data-tip={`Press and hold: ${confirmLabel}`} aria-label={icon ? label : undefined}
       onPointerDown={(e) => e.button === 0 && start()} onPointerUp={cancel} onPointerLeave={cancel} onPointerCancel={cancel}
       onKeyDown={(e) => isKey(e.key) && (e.preventDefault(), !e.repeat && start())} onKeyUp={(e) => isKey(e.key) && cancel()}>
       <span className="hold-fill" aria-hidden="true" />

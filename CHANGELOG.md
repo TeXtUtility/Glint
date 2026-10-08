@@ -1,5 +1,7 @@
 ## Unreleased
 
+- **Delete from History.** Point at a chat or session in History, in the panel or the Follow-up window, and hold its trash icon to move it to the Trash.
+- **Chats outside a session aren't saved unless you want them.** Settings → General → "Save chats outside sessions", off by default, keeps them in History. A chat already there still saves when you continue it, and chats during a session are always kept with it.
 - **Nothing stays black when the background fades.** Menus, the speaker tray, code blocks and drop shadows follow the Background setting, the update dot lost its dark ring. Ask and the send button are white, and their blue fades with the Background setting too.
 - **Ghost writes lists.** Asked for bullets or steps, Ghost types them as "- " lines instead of splitting them into separate form fields.
 - **Glint is public, and installs with curl.** `curl -fsSL https://raw.githubusercontent.com/TeXtUtility/Glint/main/install.sh | bash`, with no GitHub CLI or sign-in. Update checks talk to GitHub over plain HTTPS. Its app ID is now io.github.textutility.glint. Copies installed before this don't see updates: install once with the line above.

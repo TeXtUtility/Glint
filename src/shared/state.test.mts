@@ -234,3 +234,9 @@ test('Update channel: stable by default, beta loads back, anything else falls ba
   assert.equal(parsePersisted('{"updateChannel":"beta"}').updateChannel, 'beta')
   assert.equal(loadPersisted('{"updateChannel":"nightly"}').value.updateChannel, 'stable')
 })
+
+test('Saving chats outside sessions: off by default, on loads back, anything else falls back to off', () => {
+  assert.equal(PERSISTED_DEFAULTS.saveChats, false)
+  assert.equal(parsePersisted('{"saveChats":true}').saveChats, true)
+  assert.equal(loadPersisted('{"saveChats":"yes"}').value.saveChats, false)
+})

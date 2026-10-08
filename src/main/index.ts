@@ -302,7 +302,7 @@ const RENDERER_PATCHABLE = new Set([
   'chat', 'overlayVisible', 'isInvisible', 'lockFocusWhenInvisible', 'discreet', 'opacity', 'screenContext', 'screenshotNote', 'theme', 'openAtLogin', 'onboardingDone',
   'ai', 'transcription', 'activeModeId', 'vad', 'shortcuts', 'isRecordingShortcut', 'audioError', 'inactivityPrompt',
   'voice', 'roomMode', 'speakerLabels', 'autoCopy', 'layout', 'glance', 'aiFailure', 'smart', 'practicing', 'teach', 'updateChannel',
-  'terminalApp', 'runNewWindow', 'compactBar', 'openAtLoginInitialized', 'devTools', 'humanizer', 'capsule', 'ghostAutoSkip', 'meetingPrompt',
+  'terminalApp', 'runNewWindow', 'compactBar', 'openAtLoginInitialized', 'devTools', 'humanizer', 'capsule', 'ghostAutoSkip', 'meetingPrompt', 'saveChats',
 ])
 
 function trusted(e: IpcMainEvent | IpcMainInvokeEvent) {

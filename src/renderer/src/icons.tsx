@@ -37,6 +37,7 @@ const PATHS = {
   hourglass: 'M6 3h12M6 21h12M7 3q0 6 5 9t5 9M17 3q0 6-5 9t-5 9',
   search: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM20 20l-4-4',
   more: 'M5 12h.01M12 12h.01M19 12h.01',
+  trash: 'M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3',
   mail: 'M3 6h18v12H3zM3 7l9 6 9-6',
   calendar: 'M4 6h16v14H4zM4 10h16M8 3v4M16 3v4',
   clock: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7v5l3 2',

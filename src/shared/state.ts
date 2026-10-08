@@ -281,6 +281,8 @@ export interface Persisted {
   ghostFontSize: number
   /** When a call app starts using the mic, a small prompt offers to take notes. */
   meetingPrompt: boolean
+  /** Chats asked outside a session are kept in History. Off, a new one isn't written; one already there still saves. */
+  saveChats: boolean
   /** Ghost jumps ahead by itself when the user skips, swaps or adds words, or clicks into the next field. Off: only ⌃⌥⌘← → skip. */
   ghostAutoSkip: boolean
   /** macOS: the "move to Applications?" offer is made once. */
@@ -432,6 +434,7 @@ export const PERSISTED_DEFAULTS: Persisted = {
   ghostFontSize: GHOST_FONT_DEFAULT,
   ghostAutoSkip: true,
   meetingPrompt: true,
+  saveChats: false,
   movePromptShown: false,
   capsule: { shown: CAPSULE_ITEMS.filter((id) => id !== 'humanize'), hidden: ['humanize'] },
 }
@@ -582,6 +585,7 @@ const VALID: { [K in keyof Persisted]: (v: Persisted[K]) => boolean } = {
   ghostFontSize: (v) => Number.isInteger(v) && v >= GHOST_FONT_RANGE[0] && v <= GHOST_FONT_RANGE[1],
   ghostAutoSkip: bool,
   meetingPrompt: bool,
+  saveChats: bool,
   movePromptShown: bool,
   capsule: (c) => {
     if (!isObj(c) || !Array.isArray(c.shown) || !Array.isArray(c.hidden)) return false

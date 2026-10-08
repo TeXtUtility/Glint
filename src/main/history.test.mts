@@ -11,7 +11,7 @@ import { getState, initState, patchState } from './state.ts'
 
 // Autosaves run every 10 s, and an ended session's notes would call the AI: time only moves when a test ticks it.
 mock.timers.enable({ apis: ['setTimeout', 'setInterval'] })
-initState({ onboardingDone: true })
+initState({ onboardingDone: true, saveChats: true })
 initHistory()
 
 const fileOf = (id: string) => path.join(app.getPath('userData'), 'sessions', `${id}.glint`)
@@ -31,6 +31,21 @@ test("the live session's rename and summary edit survive its next autosave", () 
   assert.equal(r.title, 'Budget review')
   assert.equal(r.summary, 'Agreed on Q3.')
   assert.equal(r.edited, true)
+})
+
+test('with saving chats off, a new chat outside a session is never written; one already in History still saves', () => {
+  patchState({ saveChats: false })
+  try {
+    saveChat('chat-off', [ask('Is this kept?')])
+    assert.equal(fs.existsSync(fileOf('chat-off')), false)
+    patchState({ saveChats: true })
+    saveChat('chat-kept', [ask('Saved while on')])
+    patchState({ saveChats: false })
+    saveChat('chat-kept', [ask('Saved while on'), ask('Continued while off')])
+    assert.equal(loadSession('chat-kept').messages.length, 2)
+  } finally {
+    patchState({ saveChats: true })
+  }
 })
 
 test("a trashed chat isn't written back by a save from the panel that still has it open", async () => {

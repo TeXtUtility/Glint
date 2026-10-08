@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { isChatId, ownerName, renamed, sessionPeople, type ActionItem, type SavedSession, type SessionSummary } from '../../shared/history'
 import { type State } from '../../shared/state'
-import { byDay, DatePill, dayLabel, dueLabel, minutes, OwnerPill, SavedChat, SavedTranscript, time, useDraftStream } from './Dashboard'
+import { byDay, DatePill, dayLabel, dueLabel, minutes, OwnerPill, SavedChat, SavedTranscript, time, TrashRow, useDraftStream } from './Dashboard'
 import { glint, useAppState } from './glint'
 import { Icon } from './icons'
 import { Markdown } from './Markdown'
@@ -15,6 +15,7 @@ export function FollowUpWindow() {
   const s = useAppState()
   const [list, setList] = useState<SessionSummary[] | null>(null)
   const [query, setQuery] = useState('')
+  const [error, setError] = useState('')
   const [id, setId] = useState(() => new URLSearchParams(location.hash.split('?')[1] ?? '').get('id'))
   useEffect(() => glint.on('followup:open', (sid: string) => setId(sid)), [])
   useEffect(() => {
@@ -35,14 +36,18 @@ export function FollowUpWindow() {
           <input type="search" placeholder="Search sessions" aria-label="Search sessions" value={query} onChange={(e) => setQuery(e.target.value)} />
         </label>
         {list && !days.length && <p className="fw-empty">{query.trim() ? 'Nothing matches.' : 'Nothing yet.'}</p>}
+        {error && <p className="fw-error">{error}</p>}
         {days.map(([label, rows]) => (
           <section key={label}>
             <h3 className="fw-day">{label}</h3>
             {rows.map((r) => (
-              <button key={r.id} className={`fw-row ${r.id === current ? 'on' : ''}`} onClick={() => setId(r.id)}>
-                <span className="fw-row-title">{r.title || (isChatId(r.id) ? 'Untitled chat' : 'Untitled session')}</span>
-                <span className="fw-row-meta">{rowMeta(r, s.session?.id === r.id)}</span>
-              </button>
+              <div key={r.id} className="history-item">
+                <button className={`fw-row ${r.id === current ? 'on' : ''}`} onClick={() => setId(r.id)}>
+                  <span className="fw-row-title">{r.title || (isChatId(r.id) ? 'Untitled chat' : 'Untitled session')}</span>
+                  <span className="fw-row-meta">{rowMeta(r, s.session?.id === r.id)}</span>
+                </button>
+                {s.session?.id !== r.id && <TrashRow r={r} onError={(m) => setError(`Couldn't move it to the Trash: ${m}`)} />}
+              </div>
             ))}
           </section>
         ))}

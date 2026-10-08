@@ -73,8 +73,11 @@ export function setMessages(sessionId: string, messages: SavedMessage[]) {
 /** Chats moved to the Trash; the panel may still have one open, and saving it would bring it back. */
 const trashed = new Set<string>()
 
+/** Off in Settings, a new chat outside a session isn't kept; one already in History, continued, still saves. */
 export function saveChat(id: string, messages: SavedMessage[]) {
-  if (isChatId(id) && !trashed.has(id)) write(chatRecord(tryLoad(id), id, messages, Date.now()))
+  if (!isChatId(id) || trashed.has(id)) return
+  const prev = tryLoad(id)
+  if (prev || getState().saveChats) write(chatRecord(prev, id, messages, Date.now()))
 }
 
 /** The live session's notes as last written (resumed with it, or edited in History), kept for its autosaves. */
