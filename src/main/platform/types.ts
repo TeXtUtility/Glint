@@ -49,6 +49,8 @@ export interface Platform {
     takeFocus(win: BrowserWindow): void
     /** The keys back to the app the user was in; clicks still reach the window. */
     dropFocus(win: BrowserWindow): void
+    /** The window lost the keys because the user went elsewhere. */
+    blurred(win: BrowserWindow): void
     setGlass(win: BrowserWindow, rects: GlassRect[], vw: number, ax: number): void
     refitGlass(win: BrowserWindow): void
   }

@@ -108,7 +108,7 @@ function createOverlay(name: 'controlBar' | 'chat') {
     if (name === 'chat' && getState().session) patchState({ audioError: 'The chat panel crashed and was reloaded. Speech during the crash may be missing.' })
     win.reload()
   })
-  win.on('blur', () => win.setFocusable(false))
+  win.on('blur', () => platform.window.blurred(win))
   return win
 }
 

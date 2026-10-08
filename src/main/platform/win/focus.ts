@@ -1,5 +1,9 @@
 // Overlays on Windows as nonactivating as a Mac panel: a click reaches them without bringing Glint forward, and typing
 // in one gives the keys back to the app the user was in when it's done.
+//
+// Chromium throws away a click on a window it thinks can't activate (MA_NOACTIVATEANDEAT), and Electron's
+// setFocusable(false) makes it think so. So overlays stay activatable to Chromium for good, and only WS_EX_NOACTIVATE,
+// switched off while the user types in one, keeps clicks from activating Glint.
 import type { BrowserWindow } from 'electron'
 import koffi from 'koffi'
 
@@ -20,26 +24,24 @@ const lib = () => {
 
 const GWL_EXSTYLE = -20
 const WS_EX_NOACTIVATE = 0x08000000n
-const hwndOf = (win: BrowserWindow) => win.getNativeWindowHandle().readBigUInt64LE(0)
+
+function noActivate(win: BrowserWindow, on: boolean) {
+  if (win.isDestroyed()) return
+  const n = lib()
+  const hwnd = win.getNativeWindowHandle().readBigUInt64LE(0)
+  const ex = BigInt(n.getLong(hwnd, GWL_EXSTYLE))
+  const next = on ? ex | WS_EX_NOACTIVATE : ex & ~WS_EX_NOACTIVATE
+  if (next !== ex) n.setLong(hwnd, GWL_EXSTYLE, next)
+}
 
 /** The app the user was typing in before an overlay took the keys. */
 let previous: bigint | number = 0
-/** Windows Chromium will let activate (Electron's isFocusable() can't say, since it also reads WS_EX_NOACTIVATE). */
-const activatable = new WeakSet<BrowserWindow>()
 
-/**
- * Clicks reach the window without activating Glint. Chromium throws away a click on a window it thinks can't activate
- * (MA_NOACTIVATEANDEAT), so the window stays activatable to Chromium and WS_EX_NOACTIVATE keeps clicks from activating it.
- */
+/** Once, as the overlay is made. Electron's setFocusable(true) also lists the window in the taskbar; it's taken off. */
 export function preventActivation(win: BrowserWindow) {
-  const n = lib()
-  if (!activatable.has(win)) {
-    win.setFocusable(true) // also lifts WS_EX_NOACTIVATE and lists the window in the taskbar; both go back below
-    win.setSkipTaskbar(true)
-    activatable.add(win)
-  }
-  const ex = BigInt(n.getLong(hwndOf(win), GWL_EXSTYLE))
-  if (!(ex & WS_EX_NOACTIVATE)) n.setLong(hwndOf(win), GWL_EXSTYLE, ex | WS_EX_NOACTIVATE)
+  win.setFocusable(true)
+  win.setSkipTaskbar(true)
+  noActivate(win, true)
 }
 
 export function takeFocus(win: BrowserWindow) {
@@ -47,8 +49,7 @@ export function takeFocus(win: BrowserWindow) {
   const fg = n.foreground()
   const pid = [0]
   if (fg && n.pidOf(fg, pid) && pid[0] !== process.pid) previous = fg
-  win.setFocusable(true) // lifts WS_EX_NOACTIVATE
-  win.setSkipTaskbar(true)
+  noActivate(win, false)
   win.focus()
 }
 
@@ -58,5 +59,8 @@ export function dropFocus(win: BrowserWindow) {
     // blur() would hand the keys to whatever window is next down, not to the app the user came from.
     if (!(previous && n.isWindow(previous) && n.setForeground(previous))) win.blur()
   }
-  preventActivation(win)
+  noActivate(win, true)
 }
+
+/** The user went elsewhere: clicks stop activating it again. */
+export const blurred = (win: BrowserWindow) => noActivate(win, true)

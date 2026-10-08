@@ -11,7 +11,7 @@ import type { Bgr, Platform, WindowName } from '../types'
 import * as calendar from './calendar'
 import { micUsers, openWindows } from './calls'
 import { cliCommand, shellPath } from './cli'
-import { dropFocus, preventActivation, takeFocus } from './focus'
+import { blurred, dropFocus, preventActivation, takeFocus } from './focus'
 import * as files from './files'
 import { stopKeys, watchKeys } from './keys'
 import { runInTerminal, terminals } from './terminal'
@@ -51,6 +51,7 @@ export const win: Platform = {
     preventActivation,
     takeFocus,
     dropFocus,
+    blurred,
     setGlass: () => {},
     refitGlass: () => {},
   },

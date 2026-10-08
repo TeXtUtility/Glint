@@ -73,6 +73,7 @@ export const mac: Platform = {
       win.blur()
       win.setFocusable(false)
     },
+    blurred: (win) => win.setFocusable(false),
     setGlass,
     refitGlass,
   },
