@@ -1,4 +1,4 @@
-## Unreleased
+## 0.16.0 (2026-10-09)
 
 - **Delete from History.** Point at a chat or session in History, in the panel or the Follow-up window, and hold its trash icon to move it to the Trash.
 - **Chats outside a session aren't saved unless you want them.** Settings → General → "Save chats outside sessions", off by default, keeps them in History. A chat already there still saves when you continue it, and chats during a session are always kept with it.
