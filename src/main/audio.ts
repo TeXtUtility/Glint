@@ -14,7 +14,7 @@ import { loadLocalAsr, transcribeLocal, transcribeOpenAi, unloadLocalAsr } from 
 import { embed, endVoiceSession, label, learnMe, loadVoiceModel, meScore, speakerChanges, unloadVoiceModel } from './voice'
 import { verbose } from './log'
 import { platform } from './platform'
-import { downloadLiveWords, LIVE_WORDS_MB, liveAudio, liveEnd, liveStart, liveWanted, prepareLiveWords, stopLiveWords } from './live-words'
+import { downloadLiveWords, LIVE_WORDS_MB, liveAudio, liveEnd, liveShown, liveStart, liveWanted, prepareLiveWords, stopLiveWords } from './live-words'
 
 const MODEL_PATH = path.join(app.isPackaged ? process.resourcesPath : app.getAppPath(), app.isPackaged ? '' : 'resources', 'silero_vad.onnx')
 const MODELS_DIR = () => path.join(app.getPath('userData'), 'models')
@@ -84,14 +84,16 @@ const call = { spans: [] as [number, number][], openSince: null as number | null
 export function initAudio() {
   subscribe(sync)
   sync(getState())
-  // A model picked in Settings downloads now, not at the next session start.
+  // Live words load the first time the transcript opens in a session (warmModels covers one already open at the start)
+  // and stay until it ends, so reopening it is instant.
+  // ponytail: a session that opens the transcript once holds the model (~600 MB) to its end; unload after a while hidden if that matters.
   subscribe((s, prev) => {
-    if (s.transcription.liveWords === prev.transcription.liveWords || !s.session) return
-    if (s.transcription.liveWords) prepareLive()
-    else stopLiveWords()
+    if (!s.session || !prev.session) return
+    if (liveShown(s) && !liveShown(prev)) prepareLive()
+    else if (!liveWanted(s) && liveWanted(prev)) stopLiveWords()
   })
   // The session's last lines are in by now (stopSession awaits finishAudio): free the speech model until the next one.
-  subscribe((s, prev) => prev.session && !s.session && (unloadLocalAsr(), unloadVoiceModel(), verbose('[models] speech and voice models freed')))
+  subscribe((s, prev) => prev.session && !s.session && (unloadLocalAsr(), unloadVoiceModel(), freeVad(), verbose('[models] speech, voice and VAD models freed')))
   subscribe(({ transcription: t }, { transcription: p }) => {
     if (t.engine === 'local' && (t.engine !== p.engine || t.localModel !== p.localModel || t.language !== p.language)) void prepareSpeech()
   })
@@ -140,6 +142,15 @@ async function start() {
     else void stopIt().catch(() => {})
   } catch (err) {
     if (gen === generation) helperFailed(err as Error)
+  }
+}
+
+/** The next session's start creates them again (a fraction of a second). */
+function freeVad() {
+  for (const role of ROLES) {
+    const v = vad[role]
+    vad[role] = null
+    void v?.then((s) => s.release()).catch(() => {})
   }
 }
 
@@ -234,7 +245,7 @@ function handle(role: Role, ev: SegEvent | null, p: Pipeline) {
   if (role === 'them') trackCall(ev)
   if (ev.type === 'start') {
     p.liveSent = 0
-    if (liveWanted(getState())) liveStart(role)
+    if (liveShown(getState())) liveStart(role)
     return patchState({ voiceActivity: { [role]: true } })
   }
   patchState({ voiceActivity: { [role]: false } })
@@ -457,7 +468,7 @@ export async function prepareModels(): Promise<string | null> {
 /** Live words' model, after the speech model so the two downloads don't compete. */
 function prepareLive() {
   const s = getState()
-  if (!liveWanted(s)) return
+  if (!liveShown(s)) return
   let shown = -1
   prepareLiveWords(MODELS_DIR(), (pct) => {
     const step = Math.floor(pct / 5) * 5
