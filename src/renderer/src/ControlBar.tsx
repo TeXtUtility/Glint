@@ -23,7 +23,9 @@ export function ControlBar() {
   const root = useRef<HTMLDivElement>(null)
   const dragging = useRef(false)
   const [open, setOpen] = useState<'options' | 'mode' | null>(null)
-  useTick(!!s?.session && !s.pause.paused)
+  // Compact shows the time only in the logo's tooltip, so it ticks only while the pointer could be reading it; the
+  // full capsule's clock ticks on its own (Clock), without re-rendering the capsule every second.
+  useTick(!!s?.session && !s.pause.paused && !!s.compactBar && !s.practicing && s.overlayHovered)
   useGlass('.capsule, .tray, .popover.options', isMac) // before useReportSize (see useGlass)
   useReportSize(root)
   useClickThrough()
@@ -114,7 +116,7 @@ export function SessionControls({ s, items = PANEL_ITEMS, modeOpen, onMode }: {
       {live ? (
         <span key="rec" className={`rec ${paused ? 'paused' : ''}`}>
           {paused ? <Icon name="pause" size={12} /> : <i className="rec-dot" />}
-          <span className="clock">{formatElapsed(elapsedMs(s, Date.now()))}</span>
+          <Clock s={s} />
         </span>
       ) : !failure && <span key="ready" className="cap-label">Ready</span>}
 
@@ -147,6 +149,11 @@ function useClickThrough() {
 }
 
 /** Reports what this window must hold: the capsule and tray (`flow`, which the panel sits under), plus any popover. */
+function Clock({ s }: { s: State }) {
+  useTick(!s.pause.paused)
+  return <span className="clock">{formatElapsed(elapsedMs(s, Date.now()))}</span>
+}
+
 function useReportSize(root: React.RefObject<HTMLDivElement | null>) {
   const last = useRef('')
   const report = () => {

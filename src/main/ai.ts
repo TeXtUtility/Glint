@@ -592,7 +592,9 @@ async function askClaudeCli(model: string, think: boolean, system: string[], p: 
     signal.removeEventListener('abort', stop)
   }
   if (oneOff) w.child.kill()
-  else void ensureSpare(args, sys, key) // for the next new chat, or an ask while this one is busy
+  // A spare for the next new chat, or an ask while this one is busy: during a session. Outside one, asks are rare
+  // enough that a second resident process (150–250 MB) isn't worth it; a new chat starts its own.
+  else if (getState().session) void ensureSpare(args, sys, key)
 }
 
 async function askCodexCli(model: string, _think: boolean, system: string[], p: AskPayload, jpeg: Buffer | null, onDelta: OnDelta, signal: AbortSignal) {

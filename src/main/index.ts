@@ -218,7 +218,9 @@ function warmForUse(s: State) {
   if (sig === warmedFor) return
   warmedFor = sig
   clearTimeout(warmTimer)
-  if (!sig) return coolClaudeCli()
+  // Out of use for 2 minutes, not at once: hiding the panel and showing it again shouldn't restart Claude Code (seconds
+  // of CPU) and lose the chat's conversation.
+  if (!sig) return void (warmTimer = setTimeout(coolClaudeCli, 120_000))
   warmTimer = setTimeout(() => {
     try {
       prepareSearch(mode)

@@ -5,7 +5,6 @@ import { execFile, spawn } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { promisify } from 'node:util'
-import { getDocumentProxy } from 'unpdf'
 import { webArchiveHtml, wordDocText } from '../../../shared/binarydocs'
 import { htmlText as fromHtml, isUtf8, officeXmlText, rtfText, wordMlText } from '../../../shared/doctext'
 import { withTemp } from '../../temp'
@@ -49,6 +48,7 @@ export async function extract(file: string, ext: string, onProgress?: Progress):
 async function pdfText(file: string, onProgress?: Progress): Promise<{ text: string; pages: number }> {
   let pdf
   try {
+    const { getDocumentProxy } = await import('unpdf') // on first use: platform/index loads this file on a Mac too, whose build leaves unpdf out
     pdf = await getDocumentProxy(new Uint8Array(await fs.promises.readFile(file)))
   } catch (err) {
     throw new Error((err as Error).name === 'PasswordException' ? 'is password-protected' : "isn't a readable PDF")

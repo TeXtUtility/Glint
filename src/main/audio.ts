@@ -18,8 +18,8 @@ import { downloadLiveWords, LIVE_WORDS_MB, liveAudio, liveEnd, liveShown, liveSt
 
 const MODEL_PATH = path.join(app.isPackaged ? process.resourcesPath : app.getAppPath(), app.isPackaged ? '' : 'resources', 'silero_vad.onnx')
 const MODELS_DIR = () => path.join(app.getPath('userData'), 'models')
-/** Chunks per pipeline waiting for VAD (~10 s): rides out a main-process stall instead of losing speech. */
-const QUEUE_MAX = 200
+/** Chunks per pipeline waiting for VAD (~10 s of 100 ms chunks): rides out a main-process stall instead of losing speech. */
+const QUEUE_MAX = 100
 const FLUSH_WAIT_MS = 4000
 /** Session end waits longer than an ask for the last lines, since nothing is waiting on a reply. */
 const FINISH_WAIT_MS = 10_000
@@ -377,7 +377,8 @@ async function addLine(role: Role, atMs: number, audio: Float32Array, span: [num
   }
   if (c.drop) return console.log('[audio] dropped mic line: echo of the call')
   const item: TranscriptItem = { role, at, offsetMs: elapsedMs(s, atMs), status: 'pending', ...(heard && { text: heard }), ...c.fields }
-  patchTranscript(sessionId, (items) => [...items, item].sort((a, b) => a.at.localeCompare(b.at)))
+  // In time order, after any line at the same moment. Lines arrive nearly in order, so the search from the end is short.
+  patchTranscript(sessionId, (items) => items.toSpliced(items.findLastIndex((i) => i.at <= at) + 1, 0, item))
   const same = (i: TranscriptItem) => i.role === item.role && i.at === at
 
   const t0 = Date.now()

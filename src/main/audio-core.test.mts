@@ -84,6 +84,16 @@ test('silero finds speech in synthesized audio and not in silence', { skip: proc
   assert.ok(segments[0].at >= 800 && segments[0].at <= 1400, `speech start ${segments[0].at}ms should be near 1000ms`)
 })
 
+test('VAD skips the model on digital silence', async () => {
+  let runs = 0
+  const fake = { run: async () => (runs++, { stateN: { data: new Float32Array(256) }, output: { data: new Float32Array([0.5]) } }) }
+  const v = new VadStream(fake as unknown as ort.InferenceSession)
+  assert.equal(await v.prob(frame()), 0)
+  assert.equal(runs, 0)
+  assert.equal(await v.prob(frame().fill(0.01)), 0.5)
+  assert.equal(runs, 1)
+})
+
 test('SilentCall: a minute of nothing but zeros once the user has spoken is flagged once; sound clears it', () => {
   const second = new Float32Array(16000)
   const c = new SilentCall()

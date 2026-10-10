@@ -98,6 +98,8 @@ export function removeModeFile(modeId: string, fileId: string) {
 export function referenceFor(mode: Pick<Mode, 'files'> | undefined): string | null {
   const files = mode?.files ?? []
   if (!files.length || searchesFiles(mode)) return null
+  const ids = new Set(files.map((f) => f.id))
+  for (const id of texts.keys()) if (!ids.has(id)) texts.delete(id) // another mode's text: decrypted again if it's needed
   const body = files.map((f) => `<file name="${f.name.replace(/"/g, "'")}">\n${textOf(f.id, f.name)}\n</file>`).join('\n')
   return `<reference_files>\n${body}\n</reference_files>`
 }
@@ -110,6 +112,7 @@ function indexFor(mode: Pick<Mode, 'id' | 'files'>): SearchIndex {
   if (had?.files === key) return had.index
   const index = buildIndex(files.map((f) => ({ name: f.name, text: textOf(f.id, f.name) })))
   indexes.clear() // one at a time, the active mode's: a big mode's index holds a copy of all its text
+  texts.clear() // so the decrypted text needn't stay too (up to 15M characters); a rebuild decrypts it again
   indexes.set(mode.id, { files: key, index })
   return index
 }

@@ -1,5 +1,5 @@
 // Main's console also goes to a file, so there's something to send when a user reports a bug: packaged builds have
-// no console to read. ~/Library/Logs/Glint/main.log, moved aside to main.old.log past 5 MB at launch. Main logs
+// no console to read. ~/Library/Logs/Glint/main.log, moved aside to main.old.log past 5 MB (Glint runs for weeks). Main logs
 // errors, counts and timings, never transcript, prompt or answer text; developer tools (Settings → About) add
 // `verbose` lines of the same kind.
 import { app } from 'electron'
@@ -40,18 +40,26 @@ export function bugReport(header: string): string {
 
 export function initLog() {
   const file = logFile()
-  try {
-    fs.mkdirSync(path.dirname(file), { recursive: true })
-    if ((fs.statSync(file, { throwIfNoEntry: false })?.size ?? 0) > MAX_BYTES) fs.renameSync(file, path.join(path.dirname(file), 'main.old.log'))
-  } catch {}
-  const out = fs.createWriteStream(file, { flags: 'a', mode: 0o600 })
-  out.on('error', () => {}) // a full disk mustn't take logging (or the app) down
+  let size = 0
+  /** `full`: this run's writes passed the limit (some may still be queued, so the file's size can't tell). */
+  const open = (full = false) => {
+    try {
+      fs.mkdirSync(path.dirname(file), { recursive: true })
+      size = fs.statSync(file, { throwIfNoEntry: false })?.size ?? 0
+      if (full || size > MAX_BYTES) (fs.renameSync(file, path.join(path.dirname(file), 'main.old.log')), (size = 0))
+    } catch {}
+    const s = fs.createWriteStream(file, { flags: 'a', mode: 0o600 })
+    s.on('error', () => {}) // a full disk mustn't take logging (or the app) down
+    return s
+  }
+  let out = open()
   for (const level of ['log', 'info', 'warn', 'error'] as const) {
     const write = console[level].bind(console)
     console[level] = (...args: unknown[]) => {
       write(...args)
       const line = `${new Date().toISOString()} ${level} ${format(...args)}`
       out.write(`${line}\n`)
+      if ((size += line.length + 1) > MAX_BYTES) (out.end(), (out = open(true))) // queued lines still reach the old file
       recent.push(line)
       if (recent.length > RECENT_LINES) recent.shift()
     }

@@ -1,5 +1,5 @@
 // Runs on the audio thread. The AudioContext is created at 16 kHz, so Chromium has already resampled.
-const CHUNK = 800 // 50 ms at 16 kHz
+const CHUNK = 1600 // 100 ms at 16 kHz: half the wakeups and IPC of 50 ms; the extra delay is small next to VAD's pauses
 
 class GlintMic extends AudioWorkletProcessor {
   constructor() {

@@ -496,6 +496,9 @@ html.glass .ghost :is(.glance-strip, .glance-card):not(.failing) { background-co
 .line.pending { opacity: 0.35; }
 .line.pending.heard, .line.live { opacity: 0.6; }
 .line.live p::after { content: ''; display: inline-block; width: 2px; height: 1em; margin-left: 2px; vertical-align: -2px; background: currentColor; opacity: 0.6; }
+/* An hour of transcript: lines out of view skip layout and paint (each keeps its last measured height). Not while a
+   speaker menu hangs out of one: the containment would clip it. */
+.line:not(:has(.speaker-menu)) { content-visibility: auto; contain-intrinsic-size: auto 24px; }
 .line.fresh { animation: msg-in 0.18s var(--spring); }
 @media (prefers-reduced-motion: reduce) { .line.fresh, .msg.fresh { animation: fade-in 0.12s; } }
 .who-wrap { position: relative; }

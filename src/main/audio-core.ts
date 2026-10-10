@@ -103,7 +103,14 @@ export class VadStream {
   constructor(session: ort.InferenceSession) {
     this.session = session
   }
+  /** Digital silence (exact zeros: nothing playing, a muted far end) skips the model: it can only say 0. */
+  silent = false
   async prob(frame: Float32Array): Promise<number> {
+    if (!frame.some((x) => x !== 0)) {
+      if (!this.silent) (this.reset(), (this.silent = true)) // what follows starts fresh, as it would after a pause
+      return 0
+    }
+    this.silent = false
     const input = new Float32Array(CONTEXT + FRAME)
     input.set(this.context)
     input.set(frame, CONTEXT)
