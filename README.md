@@ -132,6 +132,6 @@ Remove-Item -Recurse "$env:APPDATA\Glint"
 
 MIT with the [Commons Clause](https://commonsclause.com/), from TeXtUtility. Use Glint anywhere, work included, and read, change and share its code. Nobody may sell Glint, a copy or fork of it, or a paid product or service whose value comes mainly from its code. The [LICENSE](LICENSE) has the full terms.
 
-Contributions are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md) and the [community terms](CODE_OF_CONDUCT.md).
+Contributions are welcome: see [CONTRIBUTING.md](.github/CONTRIBUTING.md) and the [community terms](.github/CODE_OF_CONDUCT.md).
 
 <sub>Glint transcribes other people. Get their consent where the law asks for it, and don't use it where outside help isn't allowed.</sub>
