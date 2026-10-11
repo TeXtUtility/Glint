@@ -4,6 +4,7 @@
 - **Guess reads any calendar.** Settings → Voice → Calendar link takes a calendar's private iCal address (Google, new Outlook, Outlook.com, iCloud), so Guess finds the invite in calendars the OS won't let Glint read, on a Mac or on Windows. It's read only when you press Guess, and saved encrypted like an API key. Repeating meetings, moved and skipped ones, and Outlook's time zones all come through.
 - **Windows asks for the mic again if it's turned off.** As on a Mac, turning off microphone access after setup brings setup back to say where to turn it on, instead of a session failing to hear you.
 - The meeting prompt's hint in Settings names Discord, which it already noticed.
+- **Asks no longer fail with "claude exited with code 143".** An ask that came just as Glint was ending an idle Claude Code process went to that process and failed; it now gets one that's running.
 
 ## 0.16.1 (2026-10-10)
 

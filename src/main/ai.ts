@@ -502,21 +502,25 @@ async function startClaude(args: string[], system: string, key: string, busy = f
  * one-off (notes, a name guess) answering meanwhile mustn't push out the chat's own process or its spare.
  */
 function trimWarm() {
-  const idle = warm.filter((w) => !w.busy && !w.dead).sort((a, b) => a.usedAt - b.usedAt)
-  for (const w of idle) if (Date.now() - w.usedAt > WARM_IDLE_MS) w.child.kill()
-  let live = idle.length
-  for (const w of idle) if (live-- > WARM_MAX) w.child.kill()
+  for (const w of warm.filter(idle)) if (Date.now() - w.usedAt > WARM_IDLE_MS) w.child.kill()
+  const left = warm.filter(idle).sort((a, b) => a.usedAt - b.usedAt)
+  for (const w of left.slice(0, Math.max(0, left.length - WARM_MAX))) w.child.kill()
 }
 app.on('will-quit', () => warm.forEach((w) => w.child.kill()))
 
 /** Glint is out of use (see warmForUse): ends every Claude Code process not answering right now. */
 export function coolClaudeCli() {
-  const idle = warm.filter((w) => !w.busy && !w.dead)
-  if (idle.length) verbose(`[ai] ended ${idle.length} idle Claude Code process${idle.length > 1 ? 'es' : ''}`)
-  for (const w of idle) w.child.kill()
+  const ending = warm.filter(idle)
+  if (ending.length) verbose(`[ai] ended ${ending.length} idle Claude Code process${ending.length > 1 ? 'es' : ''}`)
+  for (const w of ending) w.child.kill()
 }
 
-const spareFor = (key: string) => warm.find((w) => w.key === key && !w.busy && !w.dead && !w.replies.length)
+/**
+ * Free for an ask. Not one already told to end: it takes a moment to exit, and an ask sent to it then fails with
+ * "claude exited with code 143" (its SIGTERM).
+ */
+const idle = (w: Warm) => !w.busy && !w.dead && !w.child.killed
+const spareFor = (key: string) => warm.find((w) => w.key === key && idle(w) && !w.replies.length)
 
 /** Makes sure a started, unused process is waiting for the next new chat with these settings. */
 async function ensureSpare(args: string[], system: string, key: string) {
@@ -546,7 +550,7 @@ async function askClaudeCli(model: string, think: boolean, system: string[], p: 
   const key = warmKey(args, sys)
   const past = p.history.filter((m) => m.role === 'assistant' && m.text.trim()).map((m) => replyOf(m.text))
   // This chat's own process if it's free and holds exactly this conversation; else a fresh one, told the history.
-  const own = warm.find((w) => w.key === key && !w.busy && !w.dead && w.replies.length > 0 && w.replies.join('\0') === past.join('\0'))
+  const own = warm.find((w) => w.key === key && idle(w) && w.replies.length > 0 && w.replies.join('\0') === past.join('\0'))
   const passages = (p.reference?.length ?? 0) + (jpeg ? SCREENSHOT_CHARS : 0)
   // Too many searched passages already in its conversation: start over, told the chat without them.
   if (own && own.passages + passages > WARM_PASSAGES_MAX) own.child.kill()
