@@ -1,3 +1,7 @@
+## Unreleased
+
+- **License.** Glint is MIT with the Commons Clause: free to use anywhere and to change and share, but not to sell. CONTRIBUTING.md and community terms are new.
+
 ## 0.16.1 (2026-10-10)
 
 - **Lighter in a meeting.** Live words only run while the transcript is open, so a session with the panel on Chat no longer runs a second speech model: about a third of a CPU core less while anyone talks, and about 600 MB less memory. Opening the transcript starts them within a couple of seconds. Silent call audio skips speech detection, audio arrives in larger chunks, and Whisper languages use two threads instead of every core.
