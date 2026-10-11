@@ -1,3 +1,7 @@
+## Unreleased
+
+- **License.** Glint is MIT with the Commons Clause: free to use anywhere and to change and share, but not to sell. CONTRIBUTING.md and community terms are new.
+
 ## 0.16.0 (2026-10-09)
 
 - **Delete from History.** Point at a chat or session in History, in the panel or the Follow-up window, and hold its trash icon to move it to the Trash.
