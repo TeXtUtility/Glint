@@ -5,7 +5,7 @@ import type { State } from '../shared/state.ts'
 import { updateShortcuts } from './shortcuts.ts'
 import { getState, initState } from './state.ts'
 
-initState({ onboardingDone: true })
+initState({ onboardingDone: true, permissions: { mic: 'granted', screen: 'granted' } })
 const at = (p: Partial<State>): State => ({ ...getState(), ...p })
 const panel = (visible: boolean) => ({ ...getState().chat, visible })
 const run = () => {}

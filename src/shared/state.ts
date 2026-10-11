@@ -496,7 +496,9 @@ export const INACTIVITY_COUNTDOWN_S = 40
 
 // ponytail: no auth yet, so no splash phase and no signed-out check. Add both with the auth provider.
 export function phase(s: State): 'onboarding' | 'app' {
-  const permsOk = s.platform !== 'darwin' || (s.permissions.mic === 'granted' && s.permissions.screen === 'granted')
+  // A permission taken back after setup brings setup back, to say which and where to allow it. Windows has no screen
+  // permission (it reports it granted); its mic one is the Privacy switch for every desktop app.
+  const permsOk = s.permissions.mic === 'granted' && s.permissions.screen === 'granted'
   return (s.onboardingDone || s.practicing) && permsOk ? 'app' : 'onboarding'
 }
 

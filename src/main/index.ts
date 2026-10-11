@@ -20,7 +20,7 @@ import { modelUsage, removeUnusedModels, sweepModels } from './models'
 import { connectHumanizer, disconnectHumanizer, failureLine, humanize, HumanizeError, refreshHumanizerAccount, testHumanizer } from './humanize'
 import { PASSAGES_BRIEF_CHARS, searchQuery } from '../shared/search'
 import { watchCalls } from './meetings'
-import { inviteFor } from './calendar'
+import { inviteFor, linkStatus, saveLink } from './calendar'
 import { inviteContext } from '../shared/meetings'
 import { finishAudio, flushAudio, initAudio, prepareModels, pushCall, pushMic } from './audio'
 import { addToCalendar, draftFollowUp, generateNotes, macSleeps, macWakes, initHistory, listSessions, loadSession, relabelSpeaker, renameSpeaker, resumeSession, saveChat, saveLiveSession, setMessages, trashSession, updateActions, updateNotes } from './history'
@@ -450,6 +450,8 @@ function registerIpc() {
   on('session:start', startSession)
   on('call:dismiss', () => patchState({ callDetected: null }))
   handle('calendar:status', () => platform.calendar?.access() ?? 'denied')
+  handle('calendar:link', () => linkStatus())
+  handle('calendar:set-link', (_e, url: unknown) => saveLink(url == null ? null : String(url)))
   handle('calendar:allow', async () => {
     const access = (await platform.calendar?.request()) ?? 'denied'
     if (access === 'denied') platform.calendar?.openSettings()

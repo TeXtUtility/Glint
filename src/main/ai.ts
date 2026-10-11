@@ -147,7 +147,8 @@ export async function complete(
   return out
 }
 
-// API keys are encrypted with the OS keychain (safeStorage) and only main can read them.
+// API keys (and the calendar's private link, a password in all but name) are encrypted with the OS keychain
+// (safeStorage) and only main can read them.
 
 const keysFile = () => path.join(app.getPath('userData'), 'keys.json')
 
@@ -160,18 +161,19 @@ function readKeyFile(): Record<string, string> {
 }
 
 /** undefined = none saved. Throws if one is saved but can't be decrypted, rather than silently asking without it. */
-export function getKey(provider: KeyProvider | 'humanizer'): string | undefined {
+export function getKey(provider: KeyProvider | 'humanizer' | 'calendar'): string | undefined {
   const enc = readKeyFile()[provider]
   if (!enc) return undefined
   try {
     return safeStorage.decryptString(Buffer.from(enc, 'base64'))
   } catch {
+    if (provider === 'calendar') throw new Error(`Your saved calendar link can't be read anymore (${platform.words.keyGone}). Paste it again in Settings → Voice.`)
     const name = provider === 'anthropic' ? 'Claude' : provider === 'openai' ? 'OpenAI' : 'humanizer'
     throw new Error(`Your saved ${name} API key can't be read anymore (${platform.words.keyGone}). Paste it again in Settings → AI.`)
   }
 }
 
-export function setKey(provider: KeyProvider | 'humanizer', key: string | null) {
+export function setKey(provider: KeyProvider | 'humanizer' | 'calendar', key: string | null) {
   if (!safeStorage.isEncryptionAvailable()) throw new Error('Secure storage is unavailable on this system.')
   const all = readKeyFile()
   if (key) all[provider] = safeStorage.encryptString(key).toString('base64')
