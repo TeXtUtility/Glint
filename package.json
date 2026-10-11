@@ -1,6 +1,6 @@
 {
   "name": "glint",
-  "version": "0.16.0",
+  "version": "0.16.1",
   "license": "SEE LICENSE IN LICENSE",
   "description": "Desktop AI overlay for meetings",
   "main": "./out/main/index.js",
@@ -110,7 +110,8 @@
     "mac": {
       "files": [
         "!node_modules/onnxruntime-node/bin/napi-v*/{linux,win32}/**",
-        "!node_modules/onnxruntime-node/bin/napi-v*/darwin/*/libonnxruntime.1.*.*.dylib"
+        "!node_modules/onnxruntime-node/bin/napi-v*/darwin/*/libonnxruntime.1.*.*.dylib",
+        "!node_modules/unpdf/**"
       ],
       "identity": null,
       "category": "public.app-category.productivity",

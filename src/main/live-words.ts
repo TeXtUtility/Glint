@@ -28,6 +28,11 @@ export function liveWanted(s: State): boolean {
   return t.liveWords && t.engine === 'local' && (s.session?.language ?? t.language) === 'en'
 }
 
+/** Only the transcript view shows them, so the model loads and decodes only while it's open. */
+export function liveShown(s: State): boolean {
+  return liveWanted(s) && s.chat.visible && s.chat.view === 'transcript'
+}
+
 /** The streaming model's download size. */
 export const LIVE_WORDS_MB = 442
 

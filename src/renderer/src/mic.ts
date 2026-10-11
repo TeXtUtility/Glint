@@ -10,7 +10,7 @@ const ROOM_CONSTRAINTS: MediaTrackConstraints = { ...MIC_CONSTRAINTS, autoGainCo
 const defaultMic = async () => (await navigator.mediaDevices.enumerateDevices()).find((d) => d.kind === 'audioinput' && d.deviceId === 'default')?.label
 
 /**
- * Streams 16 kHz PCM16 chunks (50 ms) from the mic until the returned function is called. `onEnded` (once): the device
+ * Streams 16 kHz PCM16 chunks (100 ms) from the mic until the returned function is called. `onEnded` (once): the device
  * went away (unplugged, AirPods out of range) or the system default changed; calling the returned function doesn't count.
  */
 export async function openMic(onChunk: (pcm16: ArrayBuffer) => void, constraints = MIC_CONSTRAINTS, onEnded?: () => void): Promise<() => void> {
@@ -36,7 +36,9 @@ async function openPcm(stream: MediaStream, onChunk: (pcm16: ArrayBuffer) => voi
     stream.getAudioTracks()[0]?.addEventListener('ended', ended, { once: true })
     navigator.mediaDevices.addEventListener('devicechange', changed)
   }
-  const ctx = new AudioContext({ sampleRate: 16000 }) // Chromium resamples the mic with a proper filter
+  // Chromium resamples the mic with a proper filter. Nothing is played, so the audio thread can wake for 32 ms buffers
+  // instead of 8 ms ('playback'). (Electron 44 has no sinkId, which would skip opening the output device too.)
+  const ctx = new AudioContext({ sampleRate: 16000, latencyHint: 'playback' })
   const close = () => {
     done = true
     navigator.mediaDevices.removeEventListener('devicechange', changed)

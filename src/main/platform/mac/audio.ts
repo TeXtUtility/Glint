@@ -7,7 +7,7 @@ import path from 'node:path'
 export async function start(onPcm16: (bytes: Uint8Array) => void, onFailed: (err: Error) => void) {
   // Packaged, the helper sits outside app.asar: a binary inside can't be run.
   const binaryPath = app.isPackaged ? path.join(process.resourcesPath, 'app.asar.unpacked/node_modules/audiotee/bin/audiotee') : undefined
-  const t = new AudioTee({ sampleRate: 16000, chunkDurationMs: 50, binaryPath })
+  const t = new AudioTee({ sampleRate: 16000, chunkDurationMs: 100, binaryPath })
   let live = true
   const failed = (err: Error) => live && onFailed(err)
   // Pipe reads can end mid-sample; carry an odd byte over so later samples stay aligned.

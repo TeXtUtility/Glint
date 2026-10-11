@@ -244,10 +244,10 @@ html.glass .panel.surface.faded { background-color: rgb(var(--glass-rgb) / calc(
 .opt-settings { display: flex; align-items: center; gap: 8px; margin: -2px -8px -4px; padding: 6px 8px !important; border-radius: 8px !important; font-size: 12px; color: var(--text); }
 .opt-settings:hover { background: var(--glass-hover) !important; }
 .opt-settings .badge { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); margin-left: -2px; }
-/* An update is ready: the dot by each Settings button pulses. Opacity and size only, no glow; discreet mode and
-   Reduce Motion still it. */
+/* An update is ready: the dot by each Settings button pulses three times, then stays (an endless pulse keeps both
+   overlays repainting all day). Opacity and size only, no glow; discreet mode and Reduce Motion still it. */
 @keyframes dot-pulse { 50% { opacity: 0.35; scale: 0.75; } }
-.badge.update { animation: dot-pulse 1.6s ease-in-out infinite; }
+.badge.update { animation: dot-pulse 1.6s ease-in-out 3; }
 @media (prefers-reduced-motion: reduce) { .badge.update { animation: none; } }
 .opt-settings kbd { margin-left: auto; font: 11px -apple-system, BlinkMacSystemFont, system-ui, sans-serif; background: none; border: none; padding: 0; color: var(--faint); }
 .popover.options { border: 1px solid transparent; background-clip: padding-box; box-shadow: 0 24px 60px rgb(0 0 0 / calc(var(--glass-alpha, 0.9) * 0.6)); transition: border-color 0.12s; --frost: var(--glass-alpha, 0.9); }
@@ -496,6 +496,9 @@ html.glass .ghost :is(.glance-strip, .glance-card):not(.failing) { background-co
 .line.pending { opacity: 0.35; }
 .line.pending.heard, .line.live { opacity: 0.6; }
 .line.live p::after { content: ''; display: inline-block; width: 2px; height: 1em; margin-left: 2px; vertical-align: -2px; background: currentColor; opacity: 0.6; }
+/* An hour of transcript: lines out of view skip layout and paint (each keeps its last measured height). Not while a
+   speaker menu hangs out of one: the containment would clip it. */
+.line:not(:has(.speaker-menu)) { content-visibility: auto; contain-intrinsic-size: auto 24px; }
 .line.fresh { animation: msg-in 0.18s var(--spring); }
 @media (prefers-reduced-motion: reduce) { .line.fresh, .msg.fresh { animation: fade-in 0.12s; } }
 .who-wrap { position: relative; }

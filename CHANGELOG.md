@@ -2,6 +2,12 @@
 
 - **License.** Glint is MIT with the Commons Clause: free to use anywhere and to change and share, but not to sell. CONTRIBUTING.md and community terms are new.
 
+## 0.16.1 (2026-10-10)
+
+- **Lighter in a meeting.** Live words only run while the transcript is open, so a session with the panel on Chat no longer runs a second speech model: about a third of a CPU core less while anyone talks, and about 600 MB less memory. Opening the transcript starts them within a couple of seconds. Silent call audio skips speech detection, audio arrives in larger chunks, and Whisper languages use two threads instead of every core.
+- **Lighter all day.** The update dot pulses three times and then stays, the hidden panel stops drawing, hover checks slow down while the pointer rests, the Claude and OpenAI libraries load the first time they're needed, and speech-detection models are freed when a session ends. Claude Code waits two minutes before stopping when Glint goes out of use, so hiding and showing the panel doesn't restart it, and outside a session it no longer keeps a spare running.
+- **Long meetings stay smooth.** New transcript lines no longer re-sort the whole transcript, and lines out of view skip layout. The log rotates at 5 MB while Glint is running, not only when it starts.
+
 ## 0.16.0 (2026-10-09)
 
 - **Delete from History.** Point at a chat or session in History, in the panel or the Follow-up window, and hold its trash icon to move it to the Trash.

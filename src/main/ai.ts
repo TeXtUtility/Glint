@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk'
+import type Anthropic from '@anthropic-ai/sdk'
 import { app, nativeImage, safeStorage } from 'electron'
 import { createHash } from 'node:crypto'
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
@@ -6,7 +6,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { createInterface } from 'node:readline'
-import OpenAI from 'openai'
+import type OpenAI from 'openai'
 import { scrub } from '../shared/markdown'
 import { AUTO_ASK, cliPrompt, parseClaudeLine, recentHistory, userPrompt } from '../shared/prompt'
 import { cliModelFor, failureSummary, providerOrder, tryInOrder, type Failure } from '../shared/providers'
@@ -14,6 +14,12 @@ import type { AiProvider, AskPayload, KeyProvider, KeyStatus, State } from '../s
 import { getState, patchState } from './state'
 import { verbose } from './log'
 import { platform } from './platform'
+
+// The SDKs load on first use (together about 28 MB and a few hundred ms): CLI users and anyone who never asks skip them.
+let AnthropicSdk: typeof Anthropic | undefined
+let OpenAiSdk: typeof OpenAI | undefined
+const anthropicSdk = async () => (AnthropicSdk ??= (await import('@anthropic-ai/sdk')).default)
+const openAiSdk = async () => (OpenAiSdk ??= (await import('openai')).default)
 
 type OnDelta = (text: string) => void
 /** Token counts for one call, where the provider reports them (the CLIs don't). */
@@ -266,7 +272,7 @@ export async function warmCache(ai: State['ai'], system: string[], effort: AskPa
   if (Date.now() - (usedAt.get(key) ?? 0) < WARM_FOR_MS) return
   usedAt.set(key, Date.now())
   try {
-    const client = new Anthropic({ apiKey: getKey('anthropic') })
+    const client = new (await anthropicSdk())({ apiKey: getKey('anthropic') })
     // max_tokens 0: the prompt is read and cached, and nothing is generated or billed as output.
     const r = await client.beta.messages.create({ ...prefix, max_tokens: 0, messages: [{ role: 'user', content: 'warmup' }] })
     console.log(`[ai] cache warmed: write=${r.usage.cache_creation_input_tokens ?? 0} read=${r.usage.cache_read_input_tokens ?? 0}`)
@@ -278,7 +284,7 @@ export async function warmCache(ai: State['ai'], system: string[], effort: AskPa
 
 async function askClaudeApi(model: string, think: boolean, system: string[], p: AskPayload, jpeg: Buffer | null, onDelta: OnDelta, signal: AbortSignal, alive?: () => void): Promise<Usage> {
   // With no saved key, the SDK falls back to ANTHROPIC_API_KEY / an `ant auth login` profile.
-  const client = new Anthropic({ apiKey: getKey('anthropic') })
+  const client = new (await anthropicSdk())({ apiKey: getKey('anthropic') })
   const content: Anthropic.Beta.BetaContentBlockParam[] = []
   if (jpeg) content.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: jpeg.toString('base64') } })
   if (p.context) content.push({ type: 'text', text: p.context, cache_control: CACHE_CONTEXT })
@@ -302,7 +308,7 @@ async function askClaudeApi(model: string, think: boolean, system: string[], p: 
 }
 
 async function askOpenAiApi(model: string, think: boolean, system: string[], p: AskPayload, jpeg: Buffer | null, onDelta: OnDelta, signal: AbortSignal, alive?: () => void): Promise<Usage> {
-  const client = new OpenAI({ apiKey: getKey('openai') }) // no saved key: falls back to OPENAI_API_KEY
+  const client = new (await openAiSdk())({ apiKey: getKey('openai') }) // no saved key: falls back to OPENAI_API_KEY
   const stream = client.responses.stream(
     {
       model,
@@ -586,7 +592,9 @@ async function askClaudeCli(model: string, think: boolean, system: string[], p: 
     signal.removeEventListener('abort', stop)
   }
   if (oneOff) w.child.kill()
-  else void ensureSpare(args, sys, key) // for the next new chat, or an ask while this one is busy
+  // A spare for the next new chat, or an ask while this one is busy: during a session. Outside one, asks are rare
+  // enough that a second resident process (150–250 MB) isn't worth it; a new chat starts its own.
+  else if (getState().session) void ensureSpare(args, sys, key)
 }
 
 async function askCodexCli(model: string, _think: boolean, system: string[], p: AskPayload, jpeg: Buffer | null, onDelta: OnDelta, signal: AbortSignal) {
@@ -626,16 +634,16 @@ const TOO_LONG = /prompt is too long|context.{0,20}(length|window|limit)|maximum
 const TOO_LONG_MESSAGE = "Too long for this model: the mode's reference files and this chat together don't fit. A model with a bigger context (Claude, 1M tokens) takes them, or remove a file, or start a new chat."
 
 function friendlyError(err: unknown): Error {
-  if (err instanceof Anthropic.AuthenticationError || err instanceof OpenAI.AuthenticationError)
-    return new Error('The API key was rejected. Check it in Settings → AI.')
-  if (err instanceof Anthropic.RateLimitError || err instanceof OpenAI.RateLimitError)
-    return new Error(`Rate limited or out of credits: ${err.message}`)
-  if (err instanceof Anthropic.APIConnectionError || err instanceof OpenAI.APIConnectionError)
-    return new Error("Couldn't reach the API. Check your connection.")
+  // An SDK that never loaded threw nothing.
+  const A = AnthropicSdk, O = OpenAiSdk
+  const is = (k: 'AuthenticationError' | 'RateLimitError' | 'APIConnectionError' | 'APIError') => (!!A && err instanceof A[k]) || (!!O && err instanceof O[k])
+  if (is('AuthenticationError')) return new Error('The API key was rejected. Check it in Settings → AI.')
+  if (is('RateLimitError')) return new Error(`Rate limited or out of credits: ${(err as Error).message}`)
+  if (is('APIConnectionError')) return new Error("Couldn't reach the API. Check your connection.")
   if (err instanceof Error && TOO_LONG.test(err.message)) return new Error(TOO_LONG_MESSAGE) // APIs and CLIs alike
-  if (err instanceof Anthropic.APIError || err instanceof OpenAI.APIError) return new Error(`API error ${err.status ?? ''}: ${err.message}`)
-  if (err instanceof Anthropic.AnthropicError && /api key|authentication/i.test(err.message))
+  if (is('APIError')) return new Error(`API error ${(err as { status?: number }).status ?? ''}: ${(err as Error).message}`)
+  if (A && err instanceof A.AnthropicError && /api key|authentication/i.test(err.message))
     return new Error('No Claude API key. Add one in Settings → AI.')
-  if (err instanceof OpenAI.OpenAIError && /api key/i.test(err.message)) return new Error('No OpenAI API key. Add one in Settings → AI.')
+  if (O && err instanceof O.OpenAIError && /api key/i.test(err.message)) return new Error('No OpenAI API key. Add one in Settings → AI.')
   return err instanceof Error ? err : new Error(String(err))
 }

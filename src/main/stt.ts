@@ -9,7 +9,6 @@ import { pipeline } from 'node:stream/promises'
 import type { ReadableStream } from 'node:stream/web'
 import { promisify } from 'node:util'
 import type { Worker } from 'node:worker_threads'
-import OpenAI, { toFile } from 'openai'
 import { speechModelFor, type LocalWhisper } from '../shared/state.ts'
 import { collapseRepeats, encodeWav } from './audio-core.ts' // extension lets plain Node run this for checks
 import createParakeet from './parakeet-worker?nodeWorker'
@@ -167,6 +166,7 @@ export async function transcribeLocal(audio: Float32Array, size: LocalWhisper, l
 }
 
 export async function transcribeOpenAi(audio: Float32Array, model: string, language: string, apiKey?: string) {
+  const { default: OpenAI, toFile } = await import('openai') // loaded on first use: most sessions never need it
   const client = new OpenAI({ apiKey }) // no saved key: falls back to OPENAI_API_KEY
   const r = await client.audio.transcriptions.create({
     file: await toFile(encodeWav(audio), 'segment.wav', { type: 'audio/wav' }),

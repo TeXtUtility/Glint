@@ -56,7 +56,6 @@ function create(name: Name, opts: BrowserWindowConstructorOptions, query = '') {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      backgroundThrottling: name !== 'chat', // keeps the inactivity timer honest while hidden
     },
   })
   win.setContentProtection(protect)
@@ -194,6 +193,10 @@ export function updateWindows(s: State) {
     // Ghost sits above the menu bar, as the Ghost app's strip does (screen-saver level), so it can be dragged over it.
     const level = s.layout === 'ghost' ? 'screen-saver' : 'modal-panel'
     if (level !== chatLevel) (wins.chat.setAlwaysOnTop(true, level), (chatLevel = level))
+    // Unthrottled in a session, so the inactivity timer stays honest while it's hidden; throttled otherwise, so a
+    // hidden panel doesn't keep painting.
+    const throttle = !s.session
+    if (wins.chat.webContents.getBackgroundThrottling() !== throttle) wins.chat.webContents.setBackgroundThrottling(throttle)
   }
 }
 
@@ -394,8 +397,11 @@ function watchHover(on: boolean) {
     return
   }
   if (hoverTimer) return
+  let last = { x: NaN, y: NaN }
   const poll = () => {
     const p = screen.getCursorScreenPoint()
+    const still = p.x === last.x && p.y === last.y
+    last = p
     const inside = (w: BrowserWindow, inset = 0, margin = 0) => {
       const b = w.getBounds()
       return p.x >= b.x + inset - margin && p.x < b.x + b.width - inset + margin && p.y >= b.y - margin && p.y < b.y + b.height + margin
@@ -409,9 +415,11 @@ function watchHover(on: boolean) {
     const hovered = !!win
     if (hovered !== getState().overlayHovered) patchState({ overlayHovered: hovered })
     tellPointer(win, p)
-    // Far from every overlay, a slower poll is enough to notice the pointer coming back.
+    // Far from every overlay, a slower poll is enough to notice the pointer coming back; slower again while it rests,
+    // as it does most of the day (a delay of up to 1 s before an overlay sees a pointer that set off from rest).
     const near = hovered || shown.some((w) => inside(w, inset(w), HOVER_NEAR_PX))
-    hoverTimer = setTimeout(poll, near ? 100 : 400)
+    const resting = still && !hovered
+    hoverTimer = setTimeout(poll, near ? (resting ? 250 : 100) : resting ? 1000 : 400)
   }
   hoverTimer = setTimeout(poll, 100)
 }
