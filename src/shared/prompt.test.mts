@@ -32,6 +32,7 @@ test('parseClaudeLine', () => {
   assert.deepEqual(parseClaudeLine(JSON.stringify({ type: 'result', is_error: true, result: 'expired' })), { error: 'expired', done: true })
   assert.deepEqual(parseClaudeLine(JSON.stringify({ type: 'result', is_error: false, result: 'ok' })), { done: true })
   assert.deepEqual(parseClaudeLine('not json'), {})
+  assert.deepEqual(parseClaudeLine(JSON.stringify({ type: 'stream_event', event: { type: 'message_start' } })), { turn: true }) // a turn after a web search
 })
 
 test('systemPrompt appends only a non-empty active mode', () => {

@@ -27,11 +27,12 @@ export function plainLine(md: string): string {
 }
 
 /**
- * A reply as text to type out by hand (Ghost): no preamble a model added anyway, no markdown marks, bullets as "- "
- * (typeable, unlike •), maths in normal notation, and a Tab wherever the reply split its answers by field (⇥).
+ * A reply as text to type out by hand (Ghost): no preamble a model added anyway, no closing list of searched sources,
+ * no markdown marks, bullets as "- " (typeable, unlike •), maths in normal notation, and a Tab wherever the reply split
+ * its answers by field (⇥).
  */
 export function typeable(md: string): string {
-  const text = toPlain(md.replace(/\r\n?/g, '\n').replace(/^\s*(?:(?:sure|okay|ok|certainly|of course)[,.!]?\s+)?(?:here(?:'s| is| are)|below is)\b[^\n]*:[ \t]*\n+/i, ''))
+  const text = toPlain(md.replace(/\r\n?/g, '\n').replace(/\n\s*(?:#+\s*)?\**Sources\**:[\s\S]*$/i, '').replace(/^\s*(?:(?:sure|okay|ok|certainly|of course)[,.!]?\s+)?(?:here(?:'s| is| are)|below is)\b[^\n]*:[ \t]*\n+/i, ''))
     .replace(/^(\s*)• /gm, '$1- ')
     .replace(/\n*^[ \t]*⇥[ \t]*$\n*/gm, '\t')
     // What no key types: a decomposed accent (two characters, one key), an ellipsis, hyphens and spaces other than

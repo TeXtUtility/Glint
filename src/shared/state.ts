@@ -234,6 +234,8 @@ export interface Persisted {
     anthropicSmartModel: string; openaiSmartModel: string; cliSmartModel: string
     /** Let the model think before fast answers: more careful on hard questions, slower to start. Smart mode always thinks. */
     fastThinking: boolean
+    /** Let the model search the web when an answer needs facts it may not have (asks only, not notes or guesses). */
+    webSearch: boolean
     /** Tried in order when the chosen one fails. */
     fallbacks: AiProvider[]
   }
@@ -410,6 +412,7 @@ export const PERSISTED_DEFAULTS: Persisted = {
     anthropicModel: 'claude-sonnet-5-5', openaiModel: 'gpt-5.5', cliModel: '',
     anthropicSmartModel: 'claude-opus-5-5', openaiSmartModel: 'gpt-5.5', cliSmartModel: '',
     fastThinking: false,
+    webSearch: false,
     // Subscriptions only: a key saved for one thing (OpenAI transcription) shouldn't start paying for answers when
     // the chosen provider fails. Paid APIs can be added as fallbacks in Settings → AI.
     fallbacks: ['claude-cli', 'codex-cli'],
@@ -547,6 +550,7 @@ const VALID: { [K in keyof Persisted]: (v: Persisted[K]) => boolean } = {
     AI_PROVIDERS.includes(a.provider) &&
     [a.anthropicModel, a.openaiModel, a.cliModel, a.anthropicSmartModel, a.openaiSmartModel, a.cliSmartModel].every((m) => typeof m === 'string') &&
     typeof a.fastThinking === 'boolean' &&
+    typeof a.webSearch === 'boolean' &&
     Array.isArray(a.fallbacks) && a.fallbacks.every((p) => AI_PROVIDERS.includes(p)),
   transcription: (t) =>
     (t.engine === 'local' || t.engine === 'openai') &&

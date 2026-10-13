@@ -622,6 +622,8 @@ function Ai({ s }: { s: State }) {
         <Toggle label="Smart mode" hint="The same switch as the bulb by Send. Thinks it through; slower to start. Glance stays fast." checked={s.smart} onChange={(v) => patch({ smart: v })} />
         <Toggle label="Think before fast answers" hint="More careful on hard questions, slower to start. Smart mode always thinks."
           checked={ai.fastThinking} onChange={(v) => setAi({ fastThinking: v })} />
+        <Toggle label="Search the web" hint="The AI looks things up when an answer needs current facts, and lists its sources. Answers that search take a few seconds longer, and with an API key your provider bills each search."
+          checked={ai.webSearch} onChange={(v) => setAi({ webSearch: v })} />
       </Section>
 
       <Transcription s={s} />

@@ -68,6 +68,12 @@ test('typeable: only the text to type, fields split by Tab', () => {
   assert.equal(typeable('Here are my thoughts on it'), 'Here are my thoughts on it') // no colon and line break: it's the answer
 })
 
+test('typeable: a closing list of searched sources is never typed', () => {
+  assert.equal(typeable('Node 26 is current.\n\nSources: [Node.js](https://nodejs.org), [endoflife](https://endoflife.date)'), 'Node 26 is current.')
+  assert.equal(typeable('Node 26 is current.\n\nSources:\n- [Node.js](https://nodejs.org)\n- [endoflife](https://endoflife.date)'), 'Node 26 is current.')
+  assert.equal(typeable('**Sources:** cited in the report'), 'Sources: cited in the report') // an answer that starts with the word is kept
+})
+
 test('typeable: only characters a keyboard types', () => {
   assert.equal(typeable("Here's the answer:\r\nCafe\u0301 non\u2011stop\u2026\r\nnext\u200B\u2003line"), 'Caf\u00E9 non-stop...\nnext line')
 })

@@ -9,7 +9,7 @@ import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { format } from 'node:util'
 import { askEffort, elapsedMs, formatElapsed, GHOST_FONT_RANGE, GHOST_OPACITY_RANGE, isLanguageCode, NOTE_MAX, phase, searchesFiles, type AskPayload, type KeyProvider, type Mode, type Session, type ShortcutAction, type State } from '../shared/state'
-import { NAME_GUESS_SYSTEM_PROMPT, nameGuessContext, nameGuessQuestion, parseNameGuess, SAMPLE_CALL, systemPrompt } from '../shared/prompt'
+import { NAME_GUESS_SYSTEM_PROMPT, nameGuessContext, nameGuessQuestion, parseNameGuess, SAMPLE_CALL, systemPrompt, WEB_SEARCH_PROMPT } from '../shared/prompt'
 import { transcriptText } from '../shared/history'
 import { HUMANIZER_LABELS, HUMANIZERS, humanizes, type HumanizerConfig, type HumanizerService } from '../shared/humanize'
 import { scrub } from '../shared/markdown'
@@ -198,7 +198,7 @@ function boot() {
 
 /** The system prompt for an ask, in cached blocks: the mode's reference files, then the instructions. */
 const askSystem = (mode: Mode | undefined) =>
-  [referenceFor(mode), systemPrompt(mode), platform.prompt].filter((x): x is string => !!x)
+  [referenceFor(mode), systemPrompt(mode), platform.prompt, getState().ai.webSearch ? WEB_SEARCH_PROMPT : undefined].filter((x): x is string => !!x)
 
 let warmedFor = ''
 let warmTimer: NodeJS.Timeout | undefined
