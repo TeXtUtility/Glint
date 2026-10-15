@@ -8,7 +8,7 @@ import path from 'node:path'
 import { createInterface } from 'node:readline'
 import type OpenAI from 'openai'
 import { scrub } from '../shared/markdown'
-import { AUTO_ASK, cliPrompt, parseClaudeLine, recentHistory, userPrompt } from '../shared/prompt'
+import { AUTO_ASK, CITE_SOURCES_PROMPT, cliPrompt, parseClaudeLine, recentHistory, userPrompt } from '../shared/prompt'
 import { cliModelFor, failureSummary, providerOrder, tryInOrder, type Failure } from '../shared/providers'
 import type { AiProvider, AskPayload, KeyProvider, KeyStatus, State } from '../shared/state'
 import { getState, patchState } from './state'
@@ -55,12 +55,12 @@ export async function runAsk(ai: State['ai'], system: string[], p: AskPayload, o
 
 const COMPLETE_TIMEOUT_MS = 3 * 60_000
 
+/** Web search is for asks: one-offs (notes, follow-ups, name guesses) work from the call alone. */
+const searches = (ai: State['ai'], p: Pick<AskPayload, 'id'>) => ai.webSearch && p.id !== 'complete'
 /**
  * Fast answers (the default) run the fast model without thinking, so the first words come in about a second. Smart
  * mode runs the smart model and thinks it through. Background work (no effort) keeps the fast model's defaults.
  */
-/** Web search is for asks: one-offs (notes, follow-ups, name guesses) work from the call alone. */
-const searches = (ai: State['ai'], p: Pick<AskPayload, 'id'>) => ai.webSearch && p.id !== 'complete'
 const speedOf = (ai: State['ai'], p: Pick<AskPayload, 'effort'>) => ({ smart: p.effort === 'smart', think: p.effort === 'smart' || ai.fastThinking })
 
 /** A model declining to answer: final, so no fallback is asked to answer in its place. */
@@ -188,7 +188,7 @@ export function setKey(provider: KeyProvider | 'humanizer' | 'calendar', key: st
   fs.renameSync(tmp, keysFile())
 }
 
-function statusOf(provider: KeyProvider): KeyStatus {
+export function statusOf(provider: KeyProvider | 'calendar'): KeyStatus {
   try {
     return getKey(provider) ? 'saved' : 'none'
   } catch {
@@ -257,10 +257,11 @@ function anthropicPrefix(model: string, think: boolean, system: string[], effort
  * The newer search filters results before reading them, on the models that take it; others get the basic one. A few
  * searches cover any meeting question, and each one bills and keeps the user waiting.
  */
-const webSearchTool = (model: string) =>
-  /^claude-(opus-5(-5)?|opus-4-[678]|sonnet-5(-5)?|sonnet-4-6|fable-5(-1)?)(-\d{8})?$/.test(model)
-    ? { type: 'web_search_20260209' as const, name: 'web_search' as const, max_uses: 3 }
-    : { type: 'web_search_20250305' as const, name: 'web_search' as const, max_uses: 3 }
+const webSearchTool = (model: string) => ({
+  type: /^claude-(opus-5(-5)?|opus-4-[678]|sonnet-5(-5)?|sonnet-4-6|fable-5(-1)?)(-\d{8})?$/.test(model) ? 'web_search_20260209' : 'web_search_20250305',
+  name: 'web_search',
+  max_uses: 3,
+}) as const
 
 /** Searched sources as a closing line of links, for the chat panel (Glance and Ghost show or type the answer alone). */
 function sourcesLine(p: AskPayload, sources: { url: string; title?: string | null }[]) {
@@ -268,6 +269,8 @@ function sourcesLine(p: AskPayload, sources: { url: string; title?: string | nul
   if (!seen.size || p.brief || p.typeable) return ''
   return `\n\nSources: ${[...seen].slice(0, 5).map(([url, title]) => `[${title.replace(/[[\]]/g, '')}](${url})`).join(', ')}`
 }
+
+const citeAsk = (search: boolean, p: AskPayload) => (search && !p.brief && !p.typeable ? `\n\n${CITE_SOURCES_PROMPT}` : '')
 
 /** Most output one request may bill: only a runaway reaches it. Thinking counts toward it, so it gets more room. */
 const maxOutput = (think: boolean) => (think ? 32_000 : 8_000)
@@ -354,6 +357,7 @@ async function askClaudeApi(model: string, think: boolean, search: boolean, syst
 
 async function askOpenAiApi(model: string, think: boolean, search: boolean, system: string[], p: AskPayload, jpeg: Buffer | null, onDelta: OnDelta, signal: AbortSignal, alive?: () => void): Promise<Usage> {
   const client = new (await openAiSdk())({ apiKey: getKey('openai') }) // no saved key: falls back to OPENAI_API_KEY
+  const effort = openAiEffort(model, p.effort, think, search)
   const stream = client.responses.stream(
     {
       model,
@@ -361,7 +365,7 @@ async function askOpenAiApi(model: string, think: boolean, search: boolean, syst
       // OpenAI caches shared prefixes on its own; one key per system prompt keeps a user's asks on the same cache.
       prompt_cache_key: `glint-${createHash('sha256').update(system.join('\n\n')).digest('hex').slice(0, 16)}`,
       max_output_tokens: maxOutput(think),
-      ...(openAiEffort(model, p.effort, think, search) ? { reasoning: { effort: openAiEffort(model, p.effort, think, search)! } } : {}),
+      ...(effort ? { reasoning: { effort } } : {}),
       ...(search ? { tools: [{ type: 'web_search' as const }] } : {}),
       input: [
         ...p.history.filter((m) => m.text.trim()).map((m) => ({ role: m.role, content: m.text })),
@@ -613,7 +617,7 @@ async function askClaudeCli(model: string, think: boolean, search: boolean, syst
   w.passages += passages
   const content = [
     ...(jpeg ? [{ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: jpeg.toString('base64') } }] : []),
-    { type: 'text', text: chat ? userPrompt(p) : cliPrompt(p) },
+    { type: 'text', text: (chat ? userPrompt(p) : cliPrompt(p)) + citeAsk(search, p) },
   ]
   let reply = ''
   let turned = false
@@ -660,8 +664,8 @@ async function askCodexCli(model: string, _think: boolean, search: boolean, syst
   await runCli(
     'codex',
     (dir) => [
-      ...(search ? ['--search'] : []), // Codex's own web search, read-only; a flag of codex itself, so before exec
       'exec', '--skip-git-repo-check', '--sandbox', 'read-only',
+      '-c', `web_search="${search ? 'live' : 'disabled'}"`,
       // No shell tool: the prompt carries other people's speech and screen text, and read-only still allows
       // reading any file. Without a shell, an injected "cat ~/.ssh/…" has nothing to run it with.
       '-c', 'features.shell_tool=false',
@@ -671,7 +675,7 @@ async function askCodexCli(model: string, _think: boolean, search: boolean, syst
       ...(jpeg ? ['-i', 'screen.jpg'] : []),
       '-', // prompt from stdin
     ],
-    `${system.join('\n\n')}\n\n${cliPrompt(p)}${jpeg ? '\n\n(A screenshot of my screen is attached.)' : ''}`,
+    `${system.join('\n\n')}\n\n${cliPrompt(p)}${citeAsk(search, p)}${jpeg ? '\n\n(A screenshot of my screen is attached.)' : ''}`,
     signal,
     {
       files: jpeg ? { 'screen.jpg': jpeg } : {},

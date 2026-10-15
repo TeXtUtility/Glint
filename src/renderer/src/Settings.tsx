@@ -5,7 +5,7 @@ import { PROVIDER_LABELS } from '../../shared/providers'
 import {
   AI_PROVIDERS, clashesWithEditing, CORNERS, DEFAULT_SHORTCUTS, GLANCE_COOLDOWN_RANGE, isDivider, isNewer, isSystemShortcut, NOTE_MAX, PERSISTED_DEFAULTS, prettyAccelerator, TERMINAL_APPS, toAccelerator, LOCAL_WHISPER_MODELS,
   OPACITY_DEFAULTS, OPACITY_RANGES, searchesFiles, VAD_DEFAULTS, VAD_RANGES, VOICE_DEFAULTS, VOICE_RANGES,
-  type AiProvider, type AutoCopy, type CapsuleItem, type Corner, type KeyProvider, type VoiceSettings, type LocalWhisper, type Mode, type ModeFile, type OpacitySettings, type ShortcutAction, type State, type TerminalApp, type VadSettings,
+  type AiProvider, type AutoCopy, type CapsuleItem, type Corner, type KeyProvider, type KeyStatus, type VoiceSettings, type LocalWhisper, type Mode, type ModeFile, type OpacitySettings, type ShortcutAction, type State, type TerminalApp, type VadSettings,
 } from '../../shared/state'
 import notes from '../../../CHANGELOG.md?raw'
 import { CapsuleItemView, languageOptions } from './ControlBar'
@@ -1150,11 +1150,11 @@ function CalendarRow() {
 
 /** A calendar's private iCal address, for the calendars the OS won't let Glint read (new Outlook, Google). */
 function CalendarLinkRow() {
-  const [status, setStatus] = useState<'saved' | 'none' | 'unreadable' | null>(null)
+  const [status, setStatus] = useState<KeyStatus | null>(null)
   const [url, setUrl] = useState('')
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState<{ text: string; error?: boolean } | null>(null)
-  useEffect(() => void glint.invoke<'saved' | 'none' | 'unreadable'>('calendar:link').then(setStatus, () => setStatus('none')), [])
+  useEffect(() => void glint.invoke<KeyStatus>('calendar:link').then(setStatus, () => setStatus('none')), [])
   async function save(link: string | null) {
     setBusy(true)
     setNote(null)
@@ -1162,7 +1162,7 @@ function CalendarLinkRow() {
       const n = await glint.invoke<number>('calendar:set-link', link)
       setStatus(link ? 'saved' : 'none')
       setUrl('')
-      if (link) setNote({ text: `Linked: ${n} event${n === 1 ? '' : 's'} this week and next.` })
+      if (link) setNote({ text: `Linked: ${n} event${n === 1 ? '' : 's'} in the past week and the next.` })
     } catch (err) {
       setNote({ text: (err as Error).message, error: true })
     }

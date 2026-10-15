@@ -24,6 +24,8 @@ When someone asks the user a question or gives them a task, in the call or on sc
 /** A system block of its own, last, when web search is on: the rest of the prompt stays cached either way. */
 export const WEB_SEARCH_PROMPT = `You can search the web. Search when the answer depends on facts that may have changed or that you may not know well: news, prices, releases, schedules, people, companies, anything recent. Don't search for what the screen, the call or your own knowledge already answers well: every search makes the user wait a few seconds. Write nothing before a search, and don't say that you searched; just give the answer.`
 
+export const CITE_SOURCES_PROMPT = 'If you searched the web for this answer, end it with one line: "Sources: " and up to five markdown links to the pages you used.'
+
 /** A system block of its own on Windows, after the others, so the cached prompt is the same on every platform. */
 export const WINDOWS_PROMPT = 'The user is on Windows. Write shell commands for PowerShell, in a powershell block.'
 
@@ -424,8 +426,10 @@ export function cliPrompt(p: AskPayload): string {
   return parts.join('\n\n')
 }
 
-/** One line of `claude -p --output-format stream-json --include-partial-messages`. */
-/** `turn`: a new model turn began (after a tool ran, such as a web search). */
+/**
+ * One line of `claude -p --output-format stream-json --include-partial-messages`. `turn`: a new model turn began
+ * (after a tool ran, such as a web search).
+ */
 export function parseClaudeLine(line: string): { text?: string; error?: string; done?: true; turn?: true } {
   let e: any
   try {

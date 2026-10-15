@@ -3,7 +3,7 @@
 // classic Outlook on Windows), and a calendar's private iCal link, for the ones the OS can't (new Outlook, Google).
 import { net } from 'electron'
 import { pickInvite, type CalendarEvent } from '../shared/meetings'
-import { getKey, setKey } from './ai'
+import { getKey, setKey, statusOf } from './ai'
 import { platform } from './platform'
 
 const invites = new Map<string, CalendarEvent | null>()
@@ -18,24 +18,16 @@ const FEED_MAX_BYTES = 50_000_000
  */
 export async function inviteFor(sessionId: string, startedAt: number): Promise<CalendarEvent | null> {
   if (invites.has(sessionId)) return invites.get(sessionId)!
-  const link = linkStatus() === 'saved'
+  const link = statusOf('calendar') === 'saved'
   const cal = platform.calendar
   const os = !!cal && (await (link ? cal.access() : cal.request())) === 'granted'
   if (!os && !link) return null // asked again next time, in case it's allowed by then
   const read = (events: Promise<CalendarEvent[]>, from: string) =>
     events.catch((err: Error) => (console.warn(`[calendar] could not read ${from}:`, err.message), []))
-  const events = await Promise.all([os ? read(cal!.events(startedAt), 'events') : [], link ? read(linkEvents(startedAt), 'the calendar link') : []])
+  const events = await Promise.all([os ? read(cal!.events(startedAt), 'events') : [], link ? read(readFeed(getKey('calendar')!, startedAt - 6 * HOUR, startedAt + HOUR), 'the calendar link') : []])
   const invite = pickInvite(events.flat(), startedAt)
   invites.set(sessionId, invite)
   return invite
-}
-
-export function linkStatus(): 'saved' | 'none' | 'unreadable' {
-  try {
-    return getKey('calendar') ? 'saved' : 'none'
-  } catch {
-    return 'unreadable'
-  }
 }
 
 /** Reads the link once before saving it, so a wrong one is caught now. Resolves with how many events it read. */
@@ -48,15 +40,18 @@ export async function saveLink(raw: string | null): Promise<number> {
   return events.length
 }
 
-const linkEvents = (at: number) => readFeed(getKey('calendar')!, at - 6 * HOUR, at + HOUR)
-
 async function readFeed(raw: string, from: number, to: number): Promise<CalendarEvent[]> {
   const url = raw.replace(/^webcal:/i, 'https:') // calendars hand out webcal:// for the same address
   if (!/^https:\/\/\S+$/i.test(url) || url.length > 2000) throw new Error('That isn\'t a calendar link: it starts with https:// or webcal://.')
   const res = await net.fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(20_000) })
   if (!res.ok) throw new Error(`The calendar link answered ${res.status}${res.status === 404 || res.status === 401 ? ': it may have been reset' : ''}.`)
-  if (Number(res.headers.get('content-length')) > FEED_MAX_BYTES) throw new Error('The calendar is too big to read.')
-  const text = await res.text()
+  const chunks: Uint8Array[] = []
+  let size = 0
+  for await (const chunk of res.body ?? []) {
+    if ((size += chunk.length) > FEED_MAX_BYTES) throw new Error('The calendar is too big to read.')
+    chunks.push(chunk)
+  }
+  const text = Buffer.concat(chunks).toString('utf8')
   if (!text.includes('BEGIN:VCALENDAR')) throw new Error('That link isn\'t an iCal calendar. Copy the address marked iCal or ICS.')
   const { icsEvents } = await import('../shared/ics') // ical.js is only needed here
   return icsEvents(text, from, to)

@@ -6,6 +6,7 @@ import type { CalendarEvent } from './meetings.ts'
 
 /** Occurrences walked per repeating event: a daily meeting since 2010 is under 6,000. */
 const MAX_STEPS = 10_000
+const MAX_TOTAL_STEPS = 100_000
 
 const email = (v: unknown) => String(v ?? '').replace(/^mailto:/i, '').trim()
 
@@ -32,13 +33,12 @@ export function icsEvents(text: string, from: number, to: number): CalendarEvent
       name: String(p.getParameter('cn') ?? ''),
       email: email(p.getFirstValue()),
     }))
-    const seen = new Set<string>()
-    const attendees = people
-      .filter((a) => (a.email || a.name) && !seen.has(a.email || a.name) && seen.add(a.email || a.name))
+    const attendees = [...new Map(people.filter((a) => a.email || a.name).map((a) => [a.email || a.name, a])).values()]
       .map((a) => (owner && a.email.toLowerCase() === owner ? { ...a, me: true } : a))
     out.push({ title: e.summary ?? '', start: s, end: en, ...(start.isDate && { allDay: true }), attendees })
   }
 
+  let steps = 0
   for (const e of series.values()) {
     if (!e.startDate) continue
     if (!e.isRecurring()) {
@@ -46,7 +46,7 @@ export function icsEvents(text: string, from: number, to: number): CalendarEvent
       continue
     }
     const it = e.iterator()
-    for (let i = 0, next = it.next(); next && i < MAX_STEPS; i++, next = it.next()) {
+    for (let i = 0, next = it.next(); next && i < MAX_STEPS && steps++ < MAX_TOTAL_STEPS; i++, next = it.next()) {
       if (next.toJSDate().getTime() > to) break
       const o = e.getOccurrenceDetails(next)
       add(o.item, o.startDate, o.endDate)

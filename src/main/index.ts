@@ -13,14 +13,14 @@ import { NAME_GUESS_SYSTEM_PROMPT, nameGuessContext, nameGuessQuestion, parseNam
 import { transcriptText } from '../shared/history'
 import { HUMANIZER_LABELS, HUMANIZERS, humanizes, type HumanizerConfig, type HumanizerService } from '../shared/humanize'
 import { scrub } from '../shared/markdown'
-import { askWithFallbacks, cliStatus, complete, coolClaudeCli, keyStatus, removeLeftoverTemp, setKey, warmCache, warmClaudeCli } from './ai'
+import { askWithFallbacks, cliStatus, complete, coolClaudeCli, keyStatus, removeLeftoverTemp, setKey, statusOf, warmCache, warmClaudeCli } from './ai'
 import { addModeFiles, passagesFor, prepareSearch, referenceFor, removeModeFile, sweepModeFiles } from './files'
 import { bugReport, initLog, logTail, setVerbose, verbose } from './log'
 import { modelUsage, removeUnusedModels, sweepModels } from './models'
 import { connectHumanizer, disconnectHumanizer, failureLine, humanize, HumanizeError, refreshHumanizerAccount, testHumanizer } from './humanize'
 import { PASSAGES_BRIEF_CHARS, searchQuery } from '../shared/search'
 import { watchCalls } from './meetings'
-import { inviteFor, linkStatus, saveLink } from './calendar'
+import { inviteFor, saveLink } from './calendar'
 import { inviteContext } from '../shared/meetings'
 import { finishAudio, flushAudio, initAudio, prepareModels, pushCall, pushMic } from './audio'
 import { addToCalendar, draftFollowUp, generateNotes, macSleeps, macWakes, initHistory, listSessions, loadSession, relabelSpeaker, renameSpeaker, resumeSession, saveChat, saveLiveSession, setMessages, trashSession, updateActions, updateNotes } from './history'
@@ -450,7 +450,7 @@ function registerIpc() {
   on('session:start', startSession)
   on('call:dismiss', () => patchState({ callDetected: null }))
   handle('calendar:status', () => platform.calendar?.access() ?? 'denied')
-  handle('calendar:link', () => linkStatus())
+  handle('calendar:link', () => statusOf('calendar'))
   handle('calendar:set-link', (_e, url: unknown) => saveLink(url == null ? null : String(url)))
   handle('calendar:allow', async () => {
     const access = (await platform.calendar?.request()) ?? 'denied'

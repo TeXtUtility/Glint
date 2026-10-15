@@ -89,3 +89,24 @@ createInterface({ input: process.stdin }).on('line', () => {
   assert.deepEqual(args.slice(args.indexOf('--tools'), args.indexOf('--tools') + 4), ['--tools', 'WebSearch', '--allowedTools', 'WebSearch'])
   coolClaudeCli()
 })
+
+test('Codex: search set after exec, live when on and disabled when off; chat asks it for sources, Glance does not', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'glint-codex-'))
+  const fake = path.join(dir, 'codex.mjs')
+  fs.writeFileSync(fake, `import fs from 'node:fs'
+const args = process.argv.slice(2)
+fs.writeFileSync(${JSON.stringify(path.join(dir, 'args.json'))}, JSON.stringify({ args, stdin: fs.readFileSync(0, 'utf8') }))
+fs.writeFileSync(args[args.indexOf('--output-last-message') + 1], 'Node 26.')
+`)
+  mock.method(platform, 'cliCommand', async () => [process.execPath, [fake]])
+  mock.method(platform, 'shellPath', async () => process.env.PATH ?? '')
+  const run = async (webSearch: boolean, p: AskPayload = ask) => {
+    assert.equal(await answer({ provider: 'codex-cli', webSearch }, p), 'Node 26.')
+    return JSON.parse(fs.readFileSync(path.join(dir, 'args.json'), 'utf8')) as { args: string[]; stdin: string }
+  }
+  const on = await run(true)
+  assert.ok(on.args.indexOf('-c') > on.args.indexOf('exec') && on.args.includes('web_search="live"') && !on.args.includes('--search'))
+  assert.match(on.stdin, /Sources: /)
+  assert.ok((await run(false)).args.includes('web_search="disabled"'))
+  assert.doesNotMatch((await run(true, { ...ask, brief: true })).stdin, /Sources: /)
+})
