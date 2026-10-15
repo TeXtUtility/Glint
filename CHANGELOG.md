@@ -1,11 +1,14 @@
 ## Unreleased
 
-- **Search the web.** Settings → AI → Search the web lets the AI look things up when an answer needs current facts, on every provider: Claude and OpenAI keys, Claude Code and Codex. Chat answers end with their sources; Glance and Ghost show only the answer. Notes, follow-ups and name guesses never search.
+- **Search the web.** Settings → AI → Search the web lets the AI look things up when an answer needs current facts, on every provider: Claude and OpenAI keys, Claude Code and Codex. Chat answers end with their sources; Glance and Ghost show only the answer. Notes, follow-ups and name guesses never search, and on OpenAI and Codex, which can open pages, neither do Glance's automatic answers, so something said in a call can't send the AI to a page.
 - **License.** Glint is MIT with the Commons Clause: free to use anywhere and to change and share, but not to sell. CONTRIBUTING.md and community terms are new.
 - **Guess reads any calendar.** Settings → Voice → Calendar link takes a calendar's private iCal address (Google, new Outlook, Outlook.com, iCloud), so Guess finds the invite in calendars the OS won't let Glint read, on a Mac or on Windows. It's read only when you press Guess, and saved encrypted like an API key. Repeating meetings, moved and skipped ones, and Outlook's time zones all come through.
 - **Windows asks for the mic again if it's turned off.** As on a Mac, turning off microphone access after setup brings setup back to say where to turn it on, instead of a session failing to hear you.
 - The meeting prompt's hint in Settings names Discord, which it already noticed.
 - **Asks no longer fail with "claude exited with code 143".** An ask that came just as Glint was ending an idle Claude Code process went to that process and failed; it now gets one that's running.
+- **Run says when a command is longer than the screen.** A block over 20 lines ends with how many lines it has, right above Run it?, so nothing at the top goes unread.
+- **Fixes:** a crashed voice model no longer stalls one side's transcript (it shows as failed in Settings); a chat panel that reloads mid-session keeps saving into the session; sessions, keys, people and mode files are flushed to disk before they replace the old copy, and a failed save is tried again; ending a resumed session while its notes are still being written writes them again from the whole transcript; a mic switched while the mic opens no longer sends your voice twice; the calendar link's note says it read the past week and the next; Codex's web search follows the switch, and Claude Code and Codex chat answers list their sources too.
+- **Smaller pieces.** An action item's date is picked with the system date picker. Electron 44.7.2, KaTeX 0.19.
 
 ## 0.16.1 (2026-10-10)
 
