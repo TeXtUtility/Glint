@@ -48,10 +48,7 @@ export function initHistory() {
     if (dirty && s.session) save(s, false)
   }, SAVE_EVERY_MS)
   // Quitting mid-session ends it; don't lose the last 10 s.
-  app.on('before-quit', () => {
-    const s = getState()
-    if (s.session) save(s, true)
-  })
+  app.on('before-quit', saveLiveSession)
 }
 
 /** Saves the live session now, as ended: for exits that skip before-quit (reset and relaunch). */
@@ -103,7 +100,8 @@ function save(s: Pick<State, 'session' | 'pause'>, isEnd: boolean) {
     scheduledNotes++
     setTimeout(() => void generateNotes(session.id).finally(() => scheduledNotes--), NOTES_DELAY_MS)
   }
-  if (write(record, !isEnd) && getState().lastSessionId !== record.id) patchState({ lastSessionId: record.id }) // only saved ones resume
+  if (!write(record, !isEnd)) dirty = true
+  else if (getState().lastSessionId !== record.id) patchState({ lastSessionId: record.id }) // only saved ones resume
 }
 
 /**
@@ -118,7 +116,7 @@ function write(record: SavedSession, quiet = false): boolean {
     if (!safeStorage.isEncryptionAvailable()) throw new Error('secure storage unavailable')
     const file = fileOf(record.id)
     fs.mkdirSync(dir(), { recursive: true, mode: 0o700 })
-    fs.writeFileSync(`${file}.tmp`, safeStorage.encryptString(JSON.stringify(record)), { mode: 0o600 })
+    fs.writeFileSync(`${file}.tmp`, safeStorage.encryptString(JSON.stringify(record)), { mode: 0o600, flush: true })
     fs.renameSync(`${file}.tmp`, file)
     // A rename, summary edit or ticked item on the live session: its next autosave must keep it, not the old copy.
     if (kept?.sessionId === record.id) kept.notes = notesOf(record)
@@ -292,6 +290,7 @@ export async function trashSession(id: string) {
 }
 
 const generating = new Set<string>()
+const again = new Set<string>()
 let scheduledNotes = 0
 /** Notes are being written, or about to be for a session that just ended. An update's restart waits for them. */
 export const notesPending = () => scheduledNotes > 0 || generating.size > 0
@@ -313,7 +312,11 @@ export function macWakes() {
 const retryAfterWake = (id: string) => (asleep ? afterWake.add(id) : setTimeout(() => void generateNotes(id), 10_000))
 
 export async function generateNotes(id: string) {
-  if (generating.has(id) || getState().session?.id === id) return // live sessions get notes when they end
+  if (getState().session?.id === id) return // live sessions get notes when they end
+  if (generating.has(id)) {
+    again.add(id)
+    return
+  }
   const r = tryLoad(id)
   if (!r || (!r.transcript.length && !r.messages.some((m) => m.role === 'user'))) return
   const started = Date.now()
@@ -336,7 +339,7 @@ export async function generateNotes(id: string) {
       notesStatus: 'done',
       notesError: undefined,
     })
-    patchState({ notesReady: { id, title: (cur.edited && cur.title) || notes.title } })
+    if (!again.has(id) && getState().session?.id !== id) patchState({ notesReady: { id, title: (cur.edited && cur.title) || notes.title } })
   } catch (err) {
     console.error('[history] notes failed:', err)
     // Cut off by the Mac sleeping (the lid closing): written again once it's awake, not left failed.
@@ -346,6 +349,7 @@ export async function generateNotes(id: string) {
     if (slept && cur) retryAfterWake(id)
   } finally {
     generating.delete(id)
+    if (again.delete(id)) void generateNotes(id)
   }
 }
 

@@ -70,7 +70,7 @@ export async function addModeFiles(modeId: string, win: BrowserWindow | null): P
       if (text.length > room) throw new Error(`is too long: ${thousands(text.length)} characters, and this mode has room for ${thousands(Math.max(0, room))} more`)
       if (!safeStorage.isEncryptionAvailable()) throw new Error("couldn't be saved: secure storage is unavailable")
       fs.mkdirSync(dir(), { recursive: true, mode: 0o700 })
-      fs.writeFileSync(`${blobOf(id)}.tmp`, safeStorage.encryptString(text), { mode: 0o600 })
+      fs.writeFileSync(`${blobOf(id)}.tmp`, safeStorage.encryptString(text), { mode: 0o600, flush: true })
       fs.renameSync(`${blobOf(id)}.tmp`, blobOf(id))
       texts.set(id, text)
       const added = { id, name, chars: text.length, ...(got.pages && { pages: got.pages }) }
@@ -154,7 +154,7 @@ async function extract(file: string, onProgress?: Progress): Promise<{ text: str
 }
 
 /** Drops trailing spaces and runs of blank lines, which cost tokens on every ask. Indentation and columns stay. */
-export const tidy = (text: string) => text.replace(/\r\n?/g, '\n').replace(/[ \t\f\v]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim()
+const tidy = (text: string) => text.replace(/\r\n?/g, '\n').replace(/[ \t\f\v]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim()
 
 const thousands = (n: number) => n.toLocaleString('en-US')
 

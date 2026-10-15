@@ -4,9 +4,6 @@
 import type { TerminalApp } from '../shared/state'
 import { platform } from './platform'
 
-/** The terminals this computer has. */
-export const installedTerminals = () => platform.terminals()
-
 /**
  * A console block's "$ " and "% " prompts are the reader's, not part of the command. The lines without one are output,
  * except those continuing a command whose line ends in "\".

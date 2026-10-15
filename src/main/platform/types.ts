@@ -95,7 +95,6 @@ export interface Platform {
     /** HTML files as one text, in order. */
     htmlText(files: string[]): Promise<string>
   }
-  /** null where Glint can't read calendars. */
   calendar: {
     /** Whether Glint may read them; never shows a prompt. */
     access(): Promise<CalendarAccess>
@@ -104,7 +103,7 @@ export interface Platform {
     /** Events from six hours before `at` to an hour after. */
     events(at: number): Promise<CalendarEvent[]>
     openSettings(): void
-  } | null
+  }
   /** Speaks a line through the speakers, for the sample call. */
   say(text: string): ChildProcess
   /** PATH for the CLIs Glint runs, as the user's own shell has it. */
