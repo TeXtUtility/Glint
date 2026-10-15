@@ -57,7 +57,8 @@ export async function runAsk(ai: State['ai'], system: string[], p: AskPayload, o
 const COMPLETE_TIMEOUT_MS = 3 * 60_000
 
 /** Web search is for asks: one-offs (notes, follow-ups, name guesses) work from the call alone. */
-const searches = (ai: State['ai'], p: Pick<AskPayload, 'id' | 'text'>) => ai.webSearch && p.id !== 'complete' && !AUTO_ASK.test(p.text)
+const searches = (ai: State['ai'], p: Pick<AskPayload, 'id' | 'text'>) =>
+  ai.webSearch && p.id !== 'complete' && !(AUTO_ASK.test(p.text) && (ai.provider === 'openai' || ai.provider === 'codex-cli'))
 /**
  * Fast answers (the default) run the fast model without thinking, so the first words come in about a second. Smart
  * mode runs the smart model and thinks it through. Background work (no effort) keeps the fast model's defaults.
