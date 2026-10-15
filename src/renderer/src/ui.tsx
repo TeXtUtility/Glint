@@ -293,7 +293,6 @@ export function useAutosave(value: unknown, save: () => void, ms: number) {
   useEffect(() => () => latest.current(), [])
 }
 
-/** A slider, with its filled part as --fill for the track's gradient. */
 export function Range({ range: [min, max, step], value, onChange, ...rest }: {
   range: [number, number, number]; value: number; onChange: (v: number) => void
 } & Omit<ComponentProps<'input'>, 'value' | 'onChange'>) {
