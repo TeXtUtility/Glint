@@ -103,13 +103,13 @@ export const win: Platform = {
     const file = path.join(userData, 'quit-for-update')
     fs.mkdirSync(userData, { recursive: true })
     fs.rmSync(file, { force: true }) // left by an installer that ran while Glint didn't
-    // Polled: fs.watch never fired in copies started from the Start menu.
+    // Polled (fs.watch never fired in copies started from the Start menu), every 5 s: the installer waits as long as it takes.
     setInterval(() => {
       if (!fs.existsSync(file)) return
       try {
         fs.rmSync(file, { force: true })
       } catch {} // still being written: it's the request all the same
       quit()
-    }, 2000).unref()
+    }, 5000).unref()
   },
 }

@@ -5,7 +5,7 @@ import { PROVIDER_LABELS } from '../../shared/providers'
 import {
   AI_PROVIDERS, clashesWithEditing, CORNERS, DEFAULT_SHORTCUTS, GLANCE_COOLDOWN_RANGE, isDivider, isNewer, isSystemShortcut, NOTE_MAX, PERSISTED_DEFAULTS, prettyAccelerator, TERMINAL_APPS, toAccelerator, LOCAL_WHISPER_MODELS,
   OPACITY_DEFAULTS, OPACITY_RANGES, searchesFiles, VAD_DEFAULTS, VAD_RANGES, VOICE_DEFAULTS, VOICE_RANGES,
-  type AiProvider, type AutoCopy, type CapsuleItem, type Corner, type KeyProvider, type VoiceSettings, type LocalWhisper, type Mode, type ModeFile, type OpacitySettings, type ShortcutAction, type State, type TerminalApp, type VadSettings,
+  type AiProvider, type AutoCopy, type CapsuleItem, type Corner, type KeyProvider, type KeyStatus, type VoiceSettings, type LocalWhisper, type Mode, type ModeFile, type OpacitySettings, type ShortcutAction, type State, type TerminalApp, type VadSettings,
 } from '../../shared/state'
 import notes from '../../../CHANGELOG.md?raw'
 import { CapsuleItemView, languageOptions } from './ControlBar'
@@ -186,7 +186,7 @@ function General({ s, onReleaseNotes }: { s: State; onReleaseNotes: () => void }
           </Row>
         )}
         <Toggle label="Offer to take notes when a call starts"
-          hint={`When Zoom, Teams, Webex, ${isMac ? 'FaceTime, ' : ''}Slack or a Meet, Teams or Zoom tab starts using your mic, a small prompt under the capsule offers to start a session. Glint sees which app uses the mic, never the audio.`}
+          hint={`When Zoom, Teams, Webex, ${isMac ? 'FaceTime, ' : ''}Slack, Discord or a Meet, Teams or Zoom tab starts using your mic, a small prompt under the capsule offers to start a session. Glint sees which app uses the mic, never the audio.`}
           checked={s.meetingPrompt} onChange={(v) => patch({ meetingPrompt: v })} />
         <Toggle label="Ghost skips ahead when you go off script"
           hint={`Skip, swap or add a word, or click into the next field, and Ghost jumps to where you are. Off, it only moves on the right key${
@@ -622,6 +622,8 @@ function Ai({ s }: { s: State }) {
         <Toggle label="Smart mode" hint="The same switch as the bulb by Send. Thinks it through; slower to start. Glance stays fast." checked={s.smart} onChange={(v) => patch({ smart: v })} />
         <Toggle label="Think before fast answers" hint="More careful on hard questions, slower to start. Smart mode always thinks."
           checked={ai.fastThinking} onChange={(v) => setAi({ fastThinking: v })} />
+        <Toggle label="Search the web" hint="The AI looks things up when an answer needs current facts, and lists its sources. Answers that search take a few seconds longer, and with an API key your provider bills each search."
+          checked={ai.webSearch} onChange={(v) => setAi({ webSearch: v })} />
       </Section>
 
       <Transcription s={s} />
@@ -1135,13 +1137,49 @@ function CalendarRow() {
     <Row label="Calendar invites"
       hint={!isMac
         ? access === 'denied'
-          ? 'Glint reads invites from classic Outlook, which isn\'t on this PC.'
+          ? 'Classic Outlook isn\'t on this PC. For new Outlook, Google or another calendar, add its private link below.'
           : 'Guess matches speakers to the people on the invite for the meeting you\'re in. Only that invite is read, from Outlook on this PC, when you press Guess.'
         : access === 'denied'
-          ? 'Glint can\'t read your calendars. Allow it in System Settings → Privacy & Security → Calendars, then come back.'
+          ? 'Glint can\'t read your calendars. Allow it in System Settings → Privacy & Security → Calendars, or add a calendar\'s private link below.'
           : 'Guess matches speakers to the people on the invite for the meeting you\'re in. Only that invite is read, on this Mac, when you press Guess.'}>
       {access === 'granted' ? <span className="muted">{isMac ? 'Allowed' : 'Outlook'}</span>
         : access && isMac && <button onClick={allow}>{access === 'denied' ? 'Open System Settings' : 'Allow'}</button>}
+    </Row>
+  )
+}
+
+/** A calendar's private iCal address, for the calendars the OS won't let Glint read (new Outlook, Google). */
+function CalendarLinkRow() {
+  const [status, setStatus] = useState<KeyStatus | null>(null)
+  const [url, setUrl] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [note, setNote] = useState<{ text: string; error?: boolean } | null>(null)
+  useEffect(() => void glint.invoke<KeyStatus>('calendar:link').then(setStatus, () => setStatus('none')), [])
+  async function save(link: string | null) {
+    setBusy(true)
+    setNote(null)
+    try {
+      const n = await glint.invoke<number>('calendar:set-link', link)
+      setStatus(link ? 'saved' : 'none')
+      setUrl('')
+      if (link) setNote({ text: `Linked: ${n} event${n === 1 ? '' : 's'} in the past week and the next.` })
+    } catch (err) {
+      setNote({ text: (err as Error).message, error: true })
+    }
+    setBusy(false)
+  }
+  const shown = note && (note.error ? <span className="error">{note.text}</span> : note.text)
+  return (
+    <Row label="Calendar link"
+      hint={shown || (status === 'unreadable' ? <span className="error">The saved link can\'t be read anymore ({KEY_GONE}). Paste it again.</span>
+        : status === 'saved' ? `Guess also reads the invite from this calendar's private link, ${ENCRYPTED}.`
+        : 'Its private iCal address: Google Calendar → Settings → your calendar → Secret address in iCal format; Outlook → Settings → Calendar → Shared calendars → Publish, ICS link. Read only when you press Guess.')}>
+      {status === 'saved' ? <button disabled={busy} onClick={() => void save(null)}>Remove</button> : (
+        <form className="inline" onSubmit={(e) => (e.preventDefault(), url.trim() && void save(url))}>
+          <input type="password" autoComplete="off" spellCheck={false} placeholder="https:// or webcal://" value={url} onChange={(e) => (setUrl(e.target.value), setNote(null))} />
+          <button type="submit" disabled={busy || !url.trim()}>{busy ? 'Checking…' : 'Save'}</button>
+        </form>
+      )}
     </Row>
   )
 }
@@ -1165,6 +1203,7 @@ function Voice({ s }: { s: State }) {
         hint={<>For meetings in person, where one mic hears everyone: your voice tells you apart. {s.voiceprint !== 'enrolled' ? 'Record your voice first.' : isMac ? 'If macOS Mic Mode is Voice Isolation, other people get filtered out; set it to Standard.' : 'If Windows Studio Effects has voice focus on, other people get filtered out; turn it off.'}</>} />
       <Toggle label="Speaker labels" hint={'Split "Them" into named people · also on the overlay'} checked={s.speakerLabels} onChange={(v) => patch({ speakerLabels: v })} />
       <CalendarRow />
+      <CalendarLinkRow />
 
       <Section title={`People Glint knows · ${s.people.length}`} aside={<small>Save a voice only with that person's agreement</small>}>
         {s.people.length ? s.people.map((p) => <PersonRow key={p.id} p={p} player={player} />) : (

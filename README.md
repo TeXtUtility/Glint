@@ -92,9 +92,9 @@ All of them can be changed in Settings.
 
 ## Privacy
 
-No Glint server: asks go straight to the AI you choose. Transcription stays on your computer unless you pick OpenAI in Settings → AI → Transcription. A humanizer, if you connect one, gets the answers it rewrites. Chats asked outside a session aren't saved unless you turn that on in Settings.
+No Glint server: asks go straight to the AI you choose. Transcription stays on your computer unless you pick OpenAI in Settings → AI → Transcription. A humanizer, if you connect one, gets the answers it rewrites. A calendar link, if you add one, is fetched from your calendar's own server when you press Guess. Chats asked outside a session aren't saved unless you turn that on in Settings.
 
-API keys, session history, voiceprints and mode reference files are encrypted with your Mac's keychain, or on Windows for your Windows account. Settings (mode instructions and the humanizer setup included), logs and the file Add to Calendar opens are not.
+API keys, the calendar link, session history, voiceprints and mode reference files are encrypted with your Mac's keychain, or on Windows for your Windows account. Settings (mode instructions and the humanizer setup included), logs and the file Add to Calendar opens are not.
 
 ## Build
 

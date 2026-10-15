@@ -11,7 +11,7 @@ import { getState, initState, patchState } from './state.ts'
 
 // Autosaves run every 10 s, and an ended session's notes would call the AI: time only moves when a test ticks it.
 mock.timers.enable({ apis: ['setTimeout', 'setInterval'] })
-initState({ onboardingDone: true, saveChats: true })
+initState({ onboardingDone: true, saveChats: true, permissions: { mic: 'granted', screen: 'granted' } })
 initHistory()
 
 const fileOf = (id: string) => path.join(app.getPath('userData'), 'sessions', `${id}.glint`)

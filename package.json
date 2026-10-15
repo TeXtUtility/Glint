@@ -9,7 +9,7 @@
     "build": "electron-vite build",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "node --import ./src/test/setup.ts --test --test-timeout=30000 \"src/**/*.test.mts\"",
+    "test": "node --import ./src/test/setup.ts --experimental-test-module-mocks --test --test-timeout=30000 \"src/**/*.test.mts\"",
     "package": "electron-vite build && electron-builder --mac --dir",
     "package:win": "electron-vite build && electron-builder --win --dir"
   },
@@ -17,6 +17,7 @@
     "@anthropic-ai/sdk": "^0.128.0",
     "@huggingface/transformers": "^4.3.0",
     "audiotee": "^0.0.7",
+    "ical.js": "^2.2.1",
     "koffi": "^3.3.1",
     "onnxruntime-node": "1.30.0",
     "openai": "^7.23.0",
@@ -67,6 +68,7 @@
       "!node_modules/{protobufjs,@protobufjs,flatbuffers,long}/**",
       "!out/renderer/assets/KaTeX_*.{ttf,woff}",
       "!node_modules/{openai,@anthropic-ai/sdk,@huggingface/transformers}/src/**",
+      "!node_modules/ical.js/dist/*.min.*",
       "!node_modules/**/*.{map,d.ts,d.mts,d.cts}"
     ],
     "electronLanguages": [

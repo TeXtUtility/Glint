@@ -9,18 +9,18 @@ import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { format } from 'node:util'
 import { askEffort, elapsedMs, formatElapsed, GHOST_FONT_RANGE, GHOST_OPACITY_RANGE, isLanguageCode, NOTE_MAX, phase, searchesFiles, type AskPayload, type KeyProvider, type Mode, type Session, type ShortcutAction, type State } from '../shared/state'
-import { NAME_GUESS_SYSTEM_PROMPT, nameGuessContext, nameGuessQuestion, parseNameGuess, SAMPLE_CALL, systemPrompt } from '../shared/prompt'
+import { NAME_GUESS_SYSTEM_PROMPT, nameGuessContext, nameGuessQuestion, parseNameGuess, SAMPLE_CALL, systemPrompt, WEB_SEARCH_PROMPT } from '../shared/prompt'
 import { transcriptText } from '../shared/history'
 import { HUMANIZER_LABELS, HUMANIZERS, humanizes, type HumanizerConfig, type HumanizerService } from '../shared/humanize'
 import { scrub } from '../shared/markdown'
-import { askWithFallbacks, cliStatus, complete, coolClaudeCli, keyStatus, removeLeftoverTemp, setKey, warmCache, warmClaudeCli } from './ai'
+import { askWithFallbacks, cliStatus, complete, coolClaudeCli, keyStatus, removeLeftoverTemp, setKey, statusOf, warmCache, warmClaudeCli } from './ai'
 import { addModeFiles, passagesFor, prepareSearch, referenceFor, removeModeFile, sweepModeFiles } from './files'
 import { bugReport, initLog, logTail, setVerbose, verbose } from './log'
 import { modelUsage, removeUnusedModels, sweepModels } from './models'
 import { connectHumanizer, disconnectHumanizer, failureLine, humanize, HumanizeError, refreshHumanizerAccount, testHumanizer } from './humanize'
 import { PASSAGES_BRIEF_CHARS, searchQuery } from '../shared/search'
 import { watchCalls } from './meetings'
-import { inviteFor } from './calendar'
+import { inviteFor, saveLink } from './calendar'
 import { inviteContext } from '../shared/meetings'
 import { finishAudio, flushAudio, initAudio, prepareModels, pushCall, pushMic } from './audio'
 import { addToCalendar, draftFollowUp, generateNotes, macSleeps, macWakes, initHistory, listSessions, loadSession, relabelSpeaker, renameSpeaker, resumeSession, saveChat, saveLiveSession, setMessages, trashSession, updateActions, updateNotes } from './history'
@@ -198,7 +198,7 @@ function boot() {
 
 /** The system prompt for an ask, in cached blocks: the mode's reference files, then the instructions. */
 const askSystem = (mode: Mode | undefined) =>
-  [referenceFor(mode), systemPrompt(mode), platform.prompt].filter((x): x is string => !!x)
+  [referenceFor(mode), systemPrompt(mode), platform.prompt, getState().ai.webSearch ? WEB_SEARCH_PROMPT : undefined].filter((x): x is string => !!x)
 
 let warmedFor = ''
 let warmTimer: NodeJS.Timeout | undefined
@@ -450,6 +450,8 @@ function registerIpc() {
   on('session:start', startSession)
   on('call:dismiss', () => patchState({ callDetected: null }))
   handle('calendar:status', () => platform.calendar?.access() ?? 'denied')
+  handle('calendar:link', () => statusOf('calendar'))
+  handle('calendar:set-link', (_e, url: unknown) => saveLink(url == null ? null : String(url)))
   handle('calendar:allow', async () => {
     const access = (await platform.calendar?.request()) ?? 'denied'
     if (access === 'denied') platform.calendar?.openSettings()

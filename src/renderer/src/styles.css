@@ -929,6 +929,7 @@ html[data-route="settings"] body, html[data-route="onboarding"] body { backgroun
 .settings .checks label { display: inline-flex; align-items: center; gap: 6px; }
 .settings .checks label:has(:disabled) { opacity: 0.45; }
 .settings .hz-connect .row-control :is(input[type="text"], input[type="password"]) { width: 260px; }
+.settings .row-control form.inline input { width: 200px; }
 .settings .hz-actions { display: flex; align-items: center; gap: 8px; padding: 12px 0; }
 .settings .hz-actions small { min-width: 0; overflow-wrap: anywhere; }
 .settings small.ok { color: var(--ok); }

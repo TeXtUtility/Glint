@@ -8,7 +8,7 @@ import path from 'node:path'
 import { createInterface } from 'node:readline'
 import type OpenAI from 'openai'
 import { scrub } from '../shared/markdown'
-import { AUTO_ASK, cliPrompt, parseClaudeLine, recentHistory, userPrompt } from '../shared/prompt'
+import { AUTO_ASK, CITE_SOURCES_PROMPT, cliPrompt, parseClaudeLine, recentHistory, userPrompt } from '../shared/prompt'
 import { cliModelFor, failureSummary, providerOrder, tryInOrder, type Failure } from '../shared/providers'
 import type { AiProvider, AskPayload, KeyProvider, KeyStatus, State } from '../shared/state'
 import { getState, patchState } from './state'
@@ -34,17 +34,18 @@ export async function runAsk(ai: State['ai'], system: string[], p: AskPayload, o
   // JPEG keeps big screenshots well under the APIs' per-image size limits.
   const jpeg = p.screenshot ? nativeImage.createFromDataURL(p.screenshot).toJPEG(85) : null
   const { smart, think } = speedOf(ai, p)
+  const search = searches(ai, p)
   p = { ...p, history: recentHistory(p.history) }
   try {
     switch (ai.provider) {
       case 'anthropic':
-        return await askClaudeApi(smart ? ai.anthropicSmartModel : ai.anthropicModel, think, system, p, jpeg, onDelta, signal, alive)
+        return await askClaudeApi(smart ? ai.anthropicSmartModel : ai.anthropicModel, think, search, system, p, jpeg, onDelta, signal, alive)
       case 'openai':
-        return await askOpenAiApi(smart ? ai.openaiSmartModel : ai.openaiModel, think, system, p, jpeg, onDelta, signal, alive)
+        return await askOpenAiApi(smart ? ai.openaiSmartModel : ai.openaiModel, think, search, system, p, jpeg, onDelta, signal, alive)
       case 'claude-cli':
-        return await askClaudeCli(cliModelFor('claude-cli', smart ? ai.cliSmartModel : ai.cliModel, smart), think, system, p, jpeg, onDelta, signal, alive)
+        return await askClaudeCli(cliModelFor('claude-cli', smart ? ai.cliSmartModel : ai.cliModel, smart), think, search, system, p, jpeg, onDelta, signal, alive)
       case 'codex-cli':
-        return await askCodexCli(cliModelFor('codex-cli', smart ? ai.cliSmartModel : ai.cliModel, smart), think, system, p, jpeg, onDelta, signal)
+        return await askCodexCli(cliModelFor('codex-cli', smart ? ai.cliSmartModel : ai.cliModel, smart), think, search, system, p, jpeg, onDelta, signal)
     }
   } catch (err) {
     if (signal.aborted) return
@@ -54,6 +55,8 @@ export async function runAsk(ai: State['ai'], system: string[], p: AskPayload, o
 
 const COMPLETE_TIMEOUT_MS = 3 * 60_000
 
+/** Web search is for asks: one-offs (notes, follow-ups, name guesses) work from the call alone. */
+const searches = (ai: State['ai'], p: Pick<AskPayload, 'id'>) => ai.webSearch && p.id !== 'complete'
 /**
  * Fast answers (the default) run the fast model without thinking, so the first words come in about a second. Smart
  * mode runs the smart model and thinks it through. Background work (no effort) keeps the fast model's defaults.
@@ -147,7 +150,8 @@ export async function complete(
   return out
 }
 
-// API keys are encrypted with the OS keychain (safeStorage) and only main can read them.
+// API keys (and the calendar's private link, a password in all but name) are encrypted with the OS keychain
+// (safeStorage) and only main can read them.
 
 const keysFile = () => path.join(app.getPath('userData'), 'keys.json')
 
@@ -160,18 +164,19 @@ function readKeyFile(): Record<string, string> {
 }
 
 /** undefined = none saved. Throws if one is saved but can't be decrypted, rather than silently asking without it. */
-export function getKey(provider: KeyProvider | 'humanizer'): string | undefined {
+export function getKey(provider: KeyProvider | 'humanizer' | 'calendar'): string | undefined {
   const enc = readKeyFile()[provider]
   if (!enc) return undefined
   try {
     return safeStorage.decryptString(Buffer.from(enc, 'base64'))
   } catch {
+    if (provider === 'calendar') throw new Error(`Your saved calendar link can't be read anymore (${platform.words.keyGone}). Paste it again in Settings → Voice.`)
     const name = provider === 'anthropic' ? 'Claude' : provider === 'openai' ? 'OpenAI' : 'humanizer'
     throw new Error(`Your saved ${name} API key can't be read anymore (${platform.words.keyGone}). Paste it again in Settings → AI.`)
   }
 }
 
-export function setKey(provider: KeyProvider | 'humanizer', key: string | null) {
+export function setKey(provider: KeyProvider | 'humanizer' | 'calendar', key: string | null) {
   if (!safeStorage.isEncryptionAvailable()) throw new Error('Secure storage is unavailable on this system.')
   const all = readKeyFile()
   if (key) all[provider] = safeStorage.encryptString(key).toString('base64')
@@ -183,7 +188,7 @@ export function setKey(provider: KeyProvider | 'humanizer', key: string | null) 
   fs.renameSync(tmp, keysFile())
 }
 
-function statusOf(provider: KeyProvider): KeyStatus {
+export function statusOf(provider: KeyProvider | 'calendar'): KeyStatus {
   try {
     return getKey(provider) ? 'saved' : 'none'
   } catch {
@@ -223,10 +228,11 @@ const anthropicThinking = (model: string, think: boolean) =>
 /** Thinks even on a fast answer, so it gets thinking's room in maxOutput. */
 const alwaysThinks = (model: string) => /^claude-(opus-5-5|fable)/.test(model)
 /** OpenAI reasoning: none (GPT-5.1 and later) or minimal (GPT-5) for fast answers without thinking. */
-function openAiEffort(model: string, effort: AskPayload['effort'], think: boolean) {
+function openAiEffort(model: string, effort: AskPayload['effort'], think: boolean, search: boolean) {
   if (!effort || !/^(gpt-5|o\d)/.test(model)) return undefined
   if (effort === 'smart') return 'high' as const
-  if (think || /^o\d/.test(model)) return 'low' as const
+  // Web search refuses GPT-5's minimal and does worse at none.
+  if (think || search || /^o\d/.test(model)) return 'low' as const
   return /^gpt-5\.\d/.test(model) ? 'none' as const : 'minimal' as const
 }
 /** One-off context asked about again within minutes (name guesses about several speakers). */
@@ -236,15 +242,35 @@ const CACHE_CONTEXT = { type: 'ephemeral', ttl: '5m' } as const
  * Everything ahead of the messages: the part that's cached. Asks and warmCache build it the same way, since any
  * difference, effort included, would make them different cache entries.
  */
-function anthropicPrefix(model: string, think: boolean, system: string[], effort: AskPayload['effort']) {
+function anthropicPrefix(model: string, think: boolean, system: string[], effort: AskPayload['effort'], search: boolean) {
   return {
     model,
+    ...(search ? { tools: [webSearchTool(model)] } : {}),
     ...(effort && anthropicEffort(model) ? { output_config: { effort: effort === 'smart' ? 'high' as const : 'low' as const } } : {}),
     ...anthropicThinking(model, think),
     system: system.map((text) => ({ type: 'text' as const, text, cache_control: CACHE_CONVERSATION })),
     ...(FALLBACK_MODELS.has(model) ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const } : {}),
   }
 }
+
+/**
+ * The newer search filters results before reading them, on the models that take it; others get the basic one. A few
+ * searches cover any meeting question, and each one bills and keeps the user waiting.
+ */
+const webSearchTool = (model: string) => ({
+  type: /^claude-(opus-5(-5)?|opus-4-[678]|sonnet-5(-5)?|sonnet-4-6|fable-5(-1)?)(-\d{8})?$/.test(model) ? 'web_search_20260209' : 'web_search_20250305',
+  name: 'web_search',
+  max_uses: 3,
+}) as const
+
+/** Searched sources as a closing line of links, for the chat panel (Glance and Ghost show or type the answer alone). */
+function sourcesLine(p: AskPayload, sources: { url: string; title?: string | null }[]) {
+  const seen = new Map(sources.filter((s) => /^https?:/.test(s.url)).map((s) => [s.url, s.title?.trim() || URL.parse(s.url)?.hostname || s.url]))
+  if (!seen.size || p.brief || p.typeable) return ''
+  return `\n\nSources: ${[...seen].slice(0, 5).map(([url, title]) => `[${title.replace(/[[\]]/g, '')}](${url})`).join(', ')}`
+}
+
+const citeAsk = (search: boolean, p: AskPayload) => (search && !p.brief && !p.typeable ? `\n\n${CITE_SOURCES_PROMPT}` : '')
 
 /** Most output one request may bill: only a runaway reaches it. Thinking counts toward it, so it gets more room. */
 const maxOutput = (think: boolean) => (think ? 32_000 : 8_000)
@@ -267,7 +293,7 @@ const WARM_FOR_MS = 50 * 60_000
 export async function warmCache(ai: State['ai'], system: string[], effort: AskPayload['effort']) {
   if (answerer(ai) !== 'anthropic') return
   const { smart, think } = speedOf(ai, { effort })
-  const prefix = anthropicPrefix(smart ? ai.anthropicSmartModel : ai.anthropicModel, think, system, effort)
+  const prefix = anthropicPrefix(smart ? ai.anthropicSmartModel : ai.anthropicModel, think, system, effort, ai.webSearch)
   const key = prefixKey(prefix)
   if (Date.now() - (usedAt.get(key) ?? 0) < WARM_FOR_MS) return
   usedAt.set(key, Date.now())
@@ -282,7 +308,7 @@ export async function warmCache(ai: State['ai'], system: string[], effort: AskPa
   }
 }
 
-async function askClaudeApi(model: string, think: boolean, system: string[], p: AskPayload, jpeg: Buffer | null, onDelta: OnDelta, signal: AbortSignal, alive?: () => void): Promise<Usage> {
+async function askClaudeApi(model: string, think: boolean, search: boolean, system: string[], p: AskPayload, jpeg: Buffer | null, onDelta: OnDelta, signal: AbortSignal, alive?: () => void): Promise<Usage> {
   // With no saved key, the SDK falls back to ANTHROPIC_API_KEY / an `ant auth login` profile.
   const client = new (await anthropicSdk())({ apiKey: getKey('anthropic') })
   const content: Anthropic.Beta.BetaContentBlockParam[] = []
@@ -293,22 +319,45 @@ async function askClaudeApi(model: string, think: boolean, system: string[], p: 
     .filter((m) => m.text.trim())
     .map((m, i, all) => ({ role: m.role, content: [{ type: 'text', text: m.text, ...(i === all.length - 1 ? { cache_control: CACHE_CONVERSATION } : {}) }] }))
 
-  const prefix = anthropicPrefix(model, think, system, p.effort)
-  const stream = client.beta.messages.stream({ ...prefix, max_tokens: maxOutput(think || alwaysThinks(model)), messages: [...history, { role: 'user', content }] }, { signal })
-  for await (const event of stream) {
-    alive?.()
-    if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') onDelta(event.delta.text)
+  const prefix = anthropicPrefix(model, think, system, p.effort, search)
+  const messages: Anthropic.Beta.BetaMessageParam[] = [...history, { role: 'user', content }]
+  const used: Usage = { input: 0, cacheRead: 0, cacheWrite: 0, output: 0 }
+  const sources: { url: string; title?: string | null }[] = []
+  let wrote = false
+  let since = false // a search ran since the last words: the next words start a new paragraph
+  // A long server-side search can pause the turn; sending it back as it stands resumes it. A few times at most.
+  for (let turn = 0; ; turn++) {
+    const stream = client.beta.messages.stream({ ...prefix, max_tokens: maxOutput(think || alwaysThinks(model)), messages }, { signal })
+    for await (const event of stream) {
+      alive?.()
+      if (event.type === 'content_block_start' && event.content_block.type !== 'text' && event.content_block.type !== 'thinking') since = true
+      if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+        onDelta(wrote && since ? `\n\n${event.delta.text}` : event.delta.text)
+        wrote = true
+        since = false
+      }
+    }
+    const final = await stream.finalMessage()
+    usedAt.set(prefixKey(prefix), Date.now())
+    const u = final.usage
+    used.input += u.input_tokens
+    used.cacheRead += u.cache_read_input_tokens ?? 0
+    used.cacheWrite += u.cache_creation_input_tokens ?? 0
+    used.output += u.output_tokens
+    for (const b of final.content) if (b.type === 'text') for (const c of b.citations ?? []) if (c.type === 'web_search_result_location') sources.push(c)
+    if (final.stop_reason === 'refusal') throw new RefusalError('Claude declined to answer this one.')
+    if (final.stop_reason === 'max_tokens') throw new Error(CUT_OFF)
+    if (final.stop_reason !== 'pause_turn' || turn === 3) break
+    messages.push({ role: 'assistant', content: final.content })
   }
-  const final = await stream.finalMessage()
-  usedAt.set(prefixKey(prefix), Date.now())
-  if (final.stop_reason === 'refusal') throw new RefusalError('Claude declined to answer this one.')
-  if (final.stop_reason === 'max_tokens') throw new Error(CUT_OFF)
-  const u = final.usage
-  return { input: u.input_tokens, cacheRead: u.cache_read_input_tokens ?? 0, cacheWrite: u.cache_creation_input_tokens ?? 0, output: u.output_tokens }
+  const line = sourcesLine(p, sources)
+  if (line) onDelta(line)
+  return used
 }
 
-async function askOpenAiApi(model: string, think: boolean, system: string[], p: AskPayload, jpeg: Buffer | null, onDelta: OnDelta, signal: AbortSignal, alive?: () => void): Promise<Usage> {
+async function askOpenAiApi(model: string, think: boolean, search: boolean, system: string[], p: AskPayload, jpeg: Buffer | null, onDelta: OnDelta, signal: AbortSignal, alive?: () => void): Promise<Usage> {
   const client = new (await openAiSdk())({ apiKey: getKey('openai') }) // no saved key: falls back to OPENAI_API_KEY
+  const effort = openAiEffort(model, p.effort, think, search)
   const stream = client.responses.stream(
     {
       model,
@@ -316,7 +365,8 @@ async function askOpenAiApi(model: string, think: boolean, system: string[], p: 
       // OpenAI caches shared prefixes on its own; one key per system prompt keeps a user's asks on the same cache.
       prompt_cache_key: `glint-${createHash('sha256').update(system.join('\n\n')).digest('hex').slice(0, 16)}`,
       max_output_tokens: maxOutput(think),
-      ...(openAiEffort(model, p.effort, think) ? { reasoning: { effort: openAiEffort(model, p.effort, think)! } } : {}),
+      ...(effort ? { reasoning: { effort } } : {}),
+      ...(search ? { tools: [{ type: 'web_search' as const }] } : {}),
       input: [
         ...p.history.filter((m) => m.text.trim()).map((m) => ({ role: m.role, content: m.text })),
         {
@@ -336,6 +386,9 @@ async function askOpenAiApi(model: string, think: boolean, system: string[], p: 
   }
   const final = await stream.finalResponse()
   if (final.status === 'incomplete') throw new Error(final.incomplete_details?.reason === 'content_filter' ? "OpenAI's content filter cut the answer off." : CUT_OFF)
+  const cited = final.output.flatMap((o) => (o.type === 'message' ? o.content : [])).flatMap((c) => (c.type === 'output_text' ? c.annotations : []))
+  const line = sourcesLine(p, cited.flatMap((a) => (a.type === 'url_citation' ? [a] : [])))
+  if (line) onDelta(line)
   const u = final.usage
   return { input: (u?.input_tokens ?? 0) - (u?.input_tokens_details?.cached_tokens ?? 0), cacheRead: u?.input_tokens_details?.cached_tokens ?? 0, cacheWrite: 0, output: u?.output_tokens ?? 0 }
 }
@@ -451,10 +504,12 @@ const WARM_MAX = 2
 const WARM_IDLE_MS = 10 * 60_000
 let warmTimer: NodeJS.Timeout | null = null
 
-function claudeArgs(model: string, effort: AskPayload['effort'], think: boolean): string[] {
+function claudeArgs(model: string, effort: AskPayload['effort'], think: boolean, search: boolean): string[] {
   return [
     '-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--include-partial-messages',
-    '--tools', '', // no tools: the screenshot goes inline, so it answers in one turn and can't act on anything
+    // No tools but web search: the screenshot goes inline, and it can't act on anything. Allowed, so it never waits
+    // on a permission prompt nobody can answer.
+    ...(search ? ['--tools', 'WebSearch', '--allowedTools', 'WebSearch'] : ['--tools', '']),
     '--no-session-persistence', '--strict-mcp-config',
     // No user/project settings or skills: the user's CLAUDE.md, hooks, plugins and skills are for their coding
     // sessions, and would otherwise be injected into every meeting answer (overriding Glint's). The login still works.
@@ -500,21 +555,25 @@ async function startClaude(args: string[], system: string, key: string, busy = f
  * one-off (notes, a name guess) answering meanwhile mustn't push out the chat's own process or its spare.
  */
 function trimWarm() {
-  const idle = warm.filter((w) => !w.busy && !w.dead).sort((a, b) => a.usedAt - b.usedAt)
-  for (const w of idle) if (Date.now() - w.usedAt > WARM_IDLE_MS) w.child.kill()
-  let live = idle.length
-  for (const w of idle) if (live-- > WARM_MAX) w.child.kill()
+  for (const w of warm.filter(idle)) if (Date.now() - w.usedAt > WARM_IDLE_MS) w.child.kill()
+  const left = warm.filter(idle).sort((a, b) => a.usedAt - b.usedAt)
+  for (const w of left.slice(0, Math.max(0, left.length - WARM_MAX))) w.child.kill()
 }
 app.on('will-quit', () => warm.forEach((w) => w.child.kill()))
 
 /** Glint is out of use (see warmForUse): ends every Claude Code process not answering right now. */
 export function coolClaudeCli() {
-  const idle = warm.filter((w) => !w.busy && !w.dead)
-  if (idle.length) verbose(`[ai] ended ${idle.length} idle Claude Code process${idle.length > 1 ? 'es' : ''}`)
-  for (const w of idle) w.child.kill()
+  const ending = warm.filter(idle)
+  if (ending.length) verbose(`[ai] ended ${ending.length} idle Claude Code process${ending.length > 1 ? 'es' : ''}`)
+  for (const w of ending) w.child.kill()
 }
 
-const spareFor = (key: string) => warm.find((w) => w.key === key && !w.busy && !w.dead && !w.replies.length)
+/**
+ * Free for an ask. Not one already told to end: it takes a moment to exit, and an ask sent to it then fails with
+ * "claude exited with code 143" (its SIGTERM).
+ */
+const idle = (w: Warm) => !w.busy && !w.dead && !w.child.killed
+const spareFor = (key: string) => warm.find((w) => w.key === key && idle(w) && !w.replies.length)
 
 /** Makes sure a started, unused process is waiting for the next new chat with these settings. */
 async function ensureSpare(args: string[], system: string, key: string) {
@@ -530,7 +589,7 @@ export async function warmClaudeCli(ai: State['ai'], system: string[], effort: A
   const own = ai.provider === 'claude-cli' // the CLI model fields belong to the chosen provider, as in askWithFallbacks
   const { smart, think } = speedOf(ai, { effort })
   const model = own ? (smart ? ai.cliSmartModel : ai.cliModel) : ''
-  const args = claudeArgs(cliModelFor('claude-cli', model, smart), effort, think)
+  const args = claudeArgs(cliModelFor('claude-cli', model, smart), effort, think, ai.webSearch)
   const sys = system.join('\n\n')
   await ensureSpare(args, sys, warmKey(args, sys))
 }
@@ -538,13 +597,13 @@ export async function warmClaudeCli(ai: State['ai'], system: string[], effort: A
 const warmKey = (args: string[], system: string) => createHash('sha256').update(JSON.stringify(args)).update(system).digest('hex')
 const replyOf = (text: string) => scrub(text).trim()
 
-async function askClaudeCli(model: string, think: boolean, system: string[], p: AskPayload, jpeg: Buffer | null, onDelta: OnDelta, signal: AbortSignal, alive?: () => void) {
-  const args = claudeArgs(model, p.effort, think)
+async function askClaudeCli(model: string, think: boolean, search: boolean, system: string[], p: AskPayload, jpeg: Buffer | null, onDelta: OnDelta, signal: AbortSignal, alive?: () => void) {
+  const args = claudeArgs(model, p.effort, think, search)
   const sys = system.join('\n\n')
   const key = warmKey(args, sys)
   const past = p.history.filter((m) => m.role === 'assistant' && m.text.trim()).map((m) => replyOf(m.text))
   // This chat's own process if it's free and holds exactly this conversation; else a fresh one, told the history.
-  const own = warm.find((w) => w.key === key && !w.busy && !w.dead && w.replies.length > 0 && w.replies.join('\0') === past.join('\0'))
+  const own = warm.find((w) => w.key === key && idle(w) && w.replies.length > 0 && w.replies.join('\0') === past.join('\0'))
   const passages = (p.reference?.length ?? 0) + (jpeg ? SCREENSHOT_CHARS : 0)
   // Too many searched passages already in its conversation: start over, told the chat without them.
   if (own && own.passages + passages > WARM_PASSAGES_MAX) own.child.kill()
@@ -558,9 +617,10 @@ async function askClaudeCli(model: string, think: boolean, system: string[], p: 
   w.passages += passages
   const content = [
     ...(jpeg ? [{ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: jpeg.toString('base64') } }] : []),
-    { type: 'text', text: chat ? userPrompt(p) : cliPrompt(p) },
+    { type: 'text', text: (chat ? userPrompt(p) : cliPrompt(p)) + citeAsk(search, p) },
   ]
   let reply = ''
+  let turned = false
   let cliError: string | undefined
   const answered = new Promise<'answered'>((resolve) => {
     w.onLine = (line) => {
@@ -568,9 +628,12 @@ async function askClaudeCli(model: string, think: boolean, system: string[], p: 
       if (signal.aborted) return
       alive?.()
       const r = parseClaudeLine(line)
+      if (r.turn && reply) turned = true // a search ran between: the next words start a new paragraph
       if (r.text) {
-        reply += r.text
-        onDelta(r.text)
+        const text = turned ? `\n\n${r.text}` : r.text
+        turned = false
+        reply += text
+        onDelta(text)
       }
       if (r.error) cliError = r.error
       if (r.done) resolve('answered')
@@ -597,11 +660,12 @@ async function askClaudeCli(model: string, think: boolean, system: string[], p: 
   else if (getState().session) void ensureSpare(args, sys, key)
 }
 
-async function askCodexCli(model: string, _think: boolean, system: string[], p: AskPayload, jpeg: Buffer | null, onDelta: OnDelta, signal: AbortSignal) {
+async function askCodexCli(model: string, _think: boolean, search: boolean, system: string[], p: AskPayload, jpeg: Buffer | null, onDelta: OnDelta, signal: AbortSignal) {
   await runCli(
     'codex',
     (dir) => [
       'exec', '--skip-git-repo-check', '--sandbox', 'read-only',
+      '-c', `web_search="${search ? 'live' : 'disabled'}"`,
       // No shell tool: the prompt carries other people's speech and screen text, and read-only still allows
       // reading any file. Without a shell, an injected "cat ~/.ssh/…" has nothing to run it with.
       '-c', 'features.shell_tool=false',
@@ -611,7 +675,7 @@ async function askCodexCli(model: string, _think: boolean, system: string[], p: 
       ...(jpeg ? ['-i', 'screen.jpg'] : []),
       '-', // prompt from stdin
     ],
-    `${system.join('\n\n')}\n\n${cliPrompt(p)}${jpeg ? '\n\n(A screenshot of my screen is attached.)' : ''}`,
+    `${system.join('\n\n')}\n\n${cliPrompt(p)}${citeAsk(search, p)}${jpeg ? '\n\n(A screenshot of my screen is attached.)' : ''}`,
     signal,
     {
       files: jpeg ? { 'screen.jpg': jpeg } : {},
