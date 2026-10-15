@@ -5,7 +5,6 @@ import { app } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import { isNewer, type State } from '../shared/state'
-import { shellPath } from './ai'
 import { notesPending } from './history'
 import { getState, patchState, subscribe } from './state'
 import { platform } from './platform'
@@ -147,7 +146,7 @@ export async function installUpdate() {
   try {
     // It outlives Glint: the installer quits Glint near the end, then reopens the new build. The installer comes from
     // the offered commit too, and builds that commit (GLINT_COMMIT), not whatever the branch has by now.
-    const env = { ...process.env, PATH: await shellPath(), GLINT_PID: String(process.pid), GLINT_BRANCH: branch, GLINT_COMMIT: offeredCommit }
+    const env = { ...process.env, PATH: await platform.shellPath(), GLINT_PID: String(process.pid), GLINT_BRANCH: branch, GLINT_COMMIT: offeredCommit }
     const child = platform.runInstaller(RAW, offeredCommit || branch, logFile(), env)
     child.unref()
     child.on('error', (err) => setUpdate({ status: 'failed', ...offer, message: err.message }))

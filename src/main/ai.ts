@@ -14,6 +14,7 @@ import type { AiProvider, AskPayload, KeyProvider, KeyStatus, State } from '../s
 import { getState, patchState } from './state'
 import { verbose } from './log'
 import { platform } from './platform'
+import { withTemp } from './temp'
 
 // The SDKs load on first use (together about 28 MB and a few hundred ms): CLI users and anyone who never asks skip them.
 let AnthropicSdk: typeof Anthropic | undefined
@@ -23,7 +24,7 @@ const openAiSdk = async () => (OpenAiSdk ??= (await import('openai')).default)
 
 type OnDelta = (text: string) => void
 /** Token counts for one call, where the provider reports them (the CLIs don't). */
-export interface Usage { input: number; cacheRead: number; cacheWrite: number; output: number }
+interface Usage { input: number; cacheRead: number; cacheWrite: number; output: number }
 
 /**
  * `system`: the system prompt in blocks, the biggest and least often changed first (a mode's reference files, then
@@ -56,7 +57,7 @@ export async function runAsk(ai: State['ai'], system: string[], p: AskPayload, o
 const COMPLETE_TIMEOUT_MS = 3 * 60_000
 
 /** Web search is for asks: one-offs (notes, follow-ups, name guesses) work from the call alone. */
-const searches = (ai: State['ai'], p: Pick<AskPayload, 'id'>) => ai.webSearch && p.id !== 'complete'
+const searches = (ai: State['ai'], p: Pick<AskPayload, 'id' | 'text'>) => ai.webSearch && p.id !== 'complete' && !AUTO_ASK.test(p.text)
 /**
  * Fast answers (the default) run the fast model without thinking, so the first words come in about a second. Smart
  * mode runs the smart model and thinks it through. Background work (no effort) keeps the fast model's defaults.
@@ -68,19 +69,16 @@ class RefusalError extends Error {}
 
 /** API providers need a key (saved, or in the environment); without one, trying them as a fallback is just noise. */
 function usable(provider: AiProvider): boolean {
-  if (provider === 'anthropic') return getKey('anthropic') !== undefined || !!process.env.ANTHROPIC_API_KEY
-  if (provider === 'openai') return getKey('openai') !== undefined || !!process.env.OPENAI_API_KEY
-  return true
-}
-const usableSafe = (p: AiProvider) => {
   try {
-    return usable(p)
+    if (provider === 'anthropic') return getKey('anthropic') !== undefined || !!process.env.ANTHROPIC_API_KEY
+    if (provider === 'openai') return getKey('openai') !== undefined || !!process.env.OPENAI_API_KEY
+    return true
   } catch {
     return false // a saved key that can't be read
   }
 }
 /** Who will answer the next ask: the first provider in order that's set up. */
-const answerer = (ai: State['ai']) => providerOrder(ai).find(usableSafe)
+const answerer = (ai: State['ai']) => providerOrder(ai).find(usable)
 
 /**
  * The chosen provider, then each fallback in order, until one answers (see tryInOrder for when it stops). Fallback
@@ -103,7 +101,7 @@ export async function askWithFallbacks(
         const cli = provider === ai.provider ? {} : { cliModel: '', cliSmartModel: '' }
         usage = (await runAsk({ ...ai, provider, ...cli }, system, p, (t) => (onText(), onDelta(t)), attempt, alive)) || undefined
       },
-      { usable: usableSafe, isFinal: (err) => err instanceof RefusalError || signal.aborted, onSwitch, signal, firstTextMs: (provider) => firstTextMs(provider, p, system) },
+      { usable, isFinal: (err) => err instanceof RefusalError || signal.aborted, onSwitch, signal, firstTextMs: (provider) => firstTextMs(provider, p, system) },
     )
     if (!signal.aborted) reportFailures(r.failures, r.provider, ai.provider)
     return { ...r, usage }
@@ -183,7 +181,7 @@ export function setKey(provider: KeyProvider | 'humanizer' | 'calendar', key: st
   else delete all[provider]
   // Atomic: a crash mid-write must not leave an empty file that silently drops the other provider's key.
   const tmp = `${keysFile()}.tmp`
-  fs.writeFileSync(tmp, JSON.stringify(all), { mode: 0o600 })
+  fs.writeFileSync(tmp, JSON.stringify(all), { mode: 0o600, flush: true })
   fs.chmodSync(tmp, 0o600)
   fs.renameSync(tmp, keysFile())
 }
@@ -395,15 +393,12 @@ async function askOpenAiApi(model: string, think: boolean, search: boolean, syst
 
 // Subscription logins run the user's own `claude` / `codex` CLI, which must be installed and signed in.
 
-/** Apps launched from Finder get a bare PATH; borrow the user's own, so ~/.local/bin, Homebrew, nvm etc. resolve. */
-export const shellPath = () => platform.shellPath()
-
 /**
  * What the CLI itself says about its sign-in. Its login is separate from the Claude or ChatGPT app's, so the app
  * being signed in says nothing about whether the CLI Glint runs is.
  */
 export async function cliStatus(provider: 'claude-cli' | 'codex-cli'): Promise<{ ok: boolean; detail: string }> {
-  const PATH = await shellPath()
+  const PATH = await platform.shellPath()
   const [cmd, args] = provider === 'claude-cli' ? ['claude', ['auth', 'status']] : ['codex', ['login', 'status']]
   const signIn = provider === 'claude-cli' ? 'Run `claude auth login` in a terminal.' : 'Run `codex login` in a terminal.'
   const [file, lead] = await platform.cliCommand(cmd, PATH)
@@ -437,38 +432,6 @@ export function removeLeftoverTemp() {
     try {
       if (Date.now() - fs.statSync(dir).mtimeMs > 60 * 60_000) fs.rmSync(dir, { recursive: true, force: true })
     } catch {} // another process's, or gone already
-  }
-}
-
-async function runCli(
-  name: string,
-  args: (dir: string) => string[],
-  stdin: string,
-  signal: AbortSignal,
-  opts: { files?: Record<string, string | Buffer>; afterExit?: (dir: string) => void; env?: (dir: string) => Promise<Record<string, string>> } = {},
-) {
-  const PATH = await shellPath()
-  const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), TEMP_PREFIX))
-  try {
-    for (const [name, data] of Object.entries(opts.files ?? {})) await fs.promises.writeFile(path.join(dir, name), data)
-    const env = { ...process.env, PATH, ...(opts.env ? await opts.env(dir) : {}) }
-    const [file, lead] = await platform.cliCommand(name, PATH)
-    const child = spawn(file, [...lead, ...args(dir)], { cwd: dir, env, signal, windowsHide: true }) // spawn searches env.PATH
-    child.stdin.on('error', () => {}) // EPIPE when it exits before reading everything; its exit code reports why
-    child.stdin.end(stdin)
-    let stderr = ''
-    child.stderr.on('data', (d) => (stderr = (stderr + d).slice(-4000)))
-    const code = await new Promise<number | null>((resolve, reject) => {
-      child.on('error', (err: NodeJS.ErrnoException) =>
-        reject(err.code === 'ENOENT' ? new Error(`Couldn't find the \`${name}\` command. Install it and sign in, or pick another provider in Settings → AI.`) : err),
-      )
-      child.on('close', resolve)
-    })
-    if (signal.aborted) return
-    if (code !== 0) throw new Error(`${name} exited with code ${code}: ${stderr.trim().split('\n').at(-1) ?? ''}`)
-    opts.afterExit?.(dir)
-  } finally {
-    void fs.promises.rm(dir, { recursive: true, force: true })
   }
 }
 
@@ -523,11 +486,12 @@ function claudeArgs(model: string, effort: AskPayload['effort'], think: boolean,
 
 /** `busy`: started for an ask, so trimming never takes it for an idle one before the ask gets to use it. */
 async function startClaude(args: string[], system: string, key: string, busy = false): Promise<Warm> {
-  const PATH = await shellPath()
+  const PATH = await platform.shellPath()
   const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), TEMP_PREFIX))
   await fs.promises.writeFile(path.join(dir, 'system.txt'), system)
   const [file, lead] = await platform.cliCommand('claude', PATH)
   const child = spawn(file, [...lead, ...args], { cwd: dir, env: { ...process.env, PATH }, windowsHide: true }) // spawn searches env.PATH
+  child.stdin.on('error', () => {}) // EPIPE when it exits before reading everything; its exit code reports why
   verbose(`[ai] Claude Code process started (${warm.length + 1} running)`)
   const w: Warm = { key, child, replies: [], busy, usedAt: Date.now(), onLine: null, stderr: '', exited: Promise.resolve(null), dead: false, passages: 0 }
   child.stderr.on('data', (d) => (w.stderr = (w.stderr + d).slice(-4000)))
@@ -661,9 +625,18 @@ async function askClaudeCli(model: string, think: boolean, search: boolean, syst
 }
 
 async function askCodexCli(model: string, _think: boolean, search: boolean, system: string[], p: AskPayload, jpeg: Buffer | null, onDelta: OnDelta, signal: AbortSignal) {
-  await runCli(
-    'codex',
-    (dir) => [
+  const PATH = await platform.shellPath()
+  await withTemp(async (dir) => {
+    if (jpeg) await fs.promises.writeFile(path.join(dir, 'screen.jpg'), jpeg)
+    // A private CODEX_HOME holding only the login: the user's MCP servers and plugins (computer use, file access)
+    // stay out of reach of instructions planted in other people's speech or screen text, and Codex's own session
+    // logs of this prompt land in the temp dir that's deleted afterwards.
+    const home = path.join(dir, 'codex-home')
+    await fs.promises.mkdir(home)
+    const auth = path.join(process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), 'auth.json')
+    await fs.promises.symlink(auth, path.join(home, 'auth.json')).catch(() => {}) // no login: codex says so
+    const [file, lead] = await platform.cliCommand('codex', PATH)
+    const args = [
       'exec', '--skip-git-repo-check', '--sandbox', 'read-only',
       '-c', `web_search="${search ? 'live' : 'disabled'}"`,
       // No shell tool: the prompt carries other people's speech and screen text, and read-only still allows
@@ -674,24 +647,22 @@ async function askCodexCli(model: string, _think: boolean, search: boolean, syst
       ...(p.effort ? ['-c', `model_reasoning_effort=${p.effort === 'smart' ? 'high' : 'low'}`] : []), // no lower level every Codex model takes
       ...(jpeg ? ['-i', 'screen.jpg'] : []),
       '-', // prompt from stdin
-    ],
-    `${system.join('\n\n')}\n\n${cliPrompt(p)}${citeAsk(search, p)}${jpeg ? '\n\n(A screenshot of my screen is attached.)' : ''}`,
-    signal,
-    {
-      files: jpeg ? { 'screen.jpg': jpeg } : {},
-      afterExit: (dir) => onDelta(fs.readFileSync(path.join(dir, 'reply.txt'), 'utf8').trim()), // no streaming
-      // A private CODEX_HOME holding only the login: the user's MCP servers and plugins (computer use, file access)
-      // stay out of reach of instructions planted in other people's speech or screen text, and Codex's own session
-      // logs of this prompt land in the temp dir that's deleted afterwards.
-      env: async (dir) => {
-        const home = path.join(dir, 'codex-home')
-        await fs.promises.mkdir(home)
-        const auth = path.join(process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), 'auth.json')
-        await fs.promises.symlink(auth, path.join(home, 'auth.json')).catch(() => {}) // no login: codex says so
-        return { CODEX_HOME: home }
-      },
-    },
-  )
+    ]
+    const child = spawn(file, [...lead, ...args], { cwd: dir, env: { ...process.env, PATH, CODEX_HOME: home }, signal, windowsHide: true }) // spawn searches env.PATH
+    child.stdin.on('error', () => {}) // EPIPE when it exits before reading everything; its exit code reports why
+    child.stdin.end(`${system.join('\n\n')}\n\n${cliPrompt(p)}${citeAsk(search, p)}${jpeg ? '\n\n(A screenshot of my screen is attached.)' : ''}`)
+    let stderr = ''
+    child.stderr.on('data', (d) => (stderr = (stderr + d).slice(-4000)))
+    const code = await new Promise<number | null>((resolve, reject) => {
+      child.on('error', (err: NodeJS.ErrnoException) =>
+        reject(err.code === 'ENOENT' ? new Error("Couldn't find the `codex` command. Install it and sign in, or pick another provider in Settings → AI.") : err),
+      )
+      child.on('close', resolve)
+    })
+    if (signal.aborted) return
+    if (code !== 0) throw new Error(`codex exited with code ${code}: ${stderr.trim().split('\n').at(-1) ?? ''}`)
+    onDelta(fs.readFileSync(path.join(dir, 'reply.txt'), 'utf8').trim()) // no streaming
+  })
 }
 
 const TOO_LONG = /prompt is too long|context.{0,20}(length|window|limit)|maximum context|too many (input )?tokens/i

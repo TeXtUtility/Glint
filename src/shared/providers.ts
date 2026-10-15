@@ -85,9 +85,7 @@ export async function tryInOrder(
     if (i > 0 && opts.usable && !opts.usable(provider)) continue
     if (failures.length) opts.onSwitch?.([...failures], provider)
     const ctrl = new AbortController()
-    const stop = () => ctrl.abort()
-    opts.signal?.addEventListener('abort', stop)
-    if (opts.signal?.aborted) ctrl.abort()
+    const signal = opts.signal ? AbortSignal.any([ctrl.signal, opts.signal]) : ctrl.signal
     const ms = opts.firstTextMs?.(provider)
     let slow = false
     let lastSign = Date.now()
@@ -103,7 +101,7 @@ export async function tryInOrder(
       await attempt(provider, () => {
         started = true
         clearTimeout(timer)
-      }, ctrl.signal, () => (lastSign = Date.now()))
+      }, signal, () => (lastSign = Date.now()))
       if (slow) throw new Error('stalled') // an attempt may end quietly when stopped
       return { provider, failures }
     } catch (err) {
@@ -111,7 +109,6 @@ export async function tryInOrder(
       if (started || opts.isFinal?.(err)) break
     } finally {
       clearTimeout(timer)
-      opts.signal?.removeEventListener('abort', stop)
     }
   }
   throw new AllFailedError(failures)
