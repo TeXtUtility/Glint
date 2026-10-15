@@ -7,19 +7,19 @@
 import type { BrowserWindow } from 'electron'
 import koffi from 'koffi'
 
-type Fn = (...args: any[]) => any
-let native: Record<'getLong' | 'setLong' | 'foreground' | 'setForeground' | 'isWindow' | 'pidOf', Fn> | null = null
-const lib = () => {
-  if (native) return native
+let native: ReturnType<typeof load> | null = null
+const lib = () => (native ??= load())
+
+function load() {
   const user32 = koffi.load('user32.dll')
-  return (native = {
+  return {
     getLong: user32.func('intptr_t GetWindowLongPtrW(intptr_t hwnd, int index)'),
     setLong: user32.func('intptr_t SetWindowLongPtrW(intptr_t hwnd, int index, intptr_t value)'),
     foreground: user32.func('intptr_t GetForegroundWindow()'),
     setForeground: user32.func('bool SetForegroundWindow(intptr_t hwnd)'),
     isWindow: user32.func('bool IsWindow(intptr_t hwnd)'),
     pidOf: user32.func('uint32_t GetWindowThreadProcessId(intptr_t hwnd, _Out_ uint32_t *pid)'),
-  })
+  }
 }
 
 const GWL_EXSTYLE = -20

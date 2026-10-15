@@ -9,7 +9,8 @@ let handlers: { onKey: (k: KeyInput) => void; onDoubleControl: () => void } = { 
 
 let winHook: { worker: Worker; thread: number | null; stopping: boolean } | null = null
 
-function watchKeysWin() {
+export function watchKeys(onKey: (k: KeyInput) => void, onDoubleControl: () => void): boolean {
+  handlers = { onKey, onDoubleControl }
   if (winHook) return true
   const worker = createKeysWorker()
   const h = (winHook = { worker, thread: null as number | null, stopping: false })
@@ -37,9 +38,4 @@ export function stopKeys() {
   winHook = null
   h.stopping = true
   if (h.thread) quitThread(h.thread)
-}
-
-export function watchKeys(onKey: (k: KeyInput) => void, onDoubleControl: () => void): boolean {
-  handlers = { onKey, onDoubleControl }
-  return watchKeysWin()
 }

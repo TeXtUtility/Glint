@@ -1,11 +1,12 @@
 // Mode files on a Mac, with what macOS ships: textutil for Word, RTF and HTML, PDFKit and Vision for PDFs and images.
-import { execFile, spawn } from 'node:child_process'
+import { execFile } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { promisify } from 'node:util'
 import { isUtf8 } from '../../../shared/doctext'
 import { withTemp } from '../../temp'
 import { DOCUMENTS } from '../formats'
+import { spawnLines } from '../system'
 import type { FileProgress as Progress } from '../types'
 
 const run = promisify(execFile)
@@ -96,33 +97,16 @@ function pdfOrImageText(file: string, pdf: boolean, onProgress?: Progress): Prom
   return withTemp(async (tmp) => {
     const out = path.join(tmp, 'out.txt')
     let pages: number | undefined
-    await new Promise<void>((resolve, reject) => {
-      const p = spawn('/usr/bin/osascript', ['-l', 'JavaScript', '-e', PDF_SCRIPT, file, out, pdf ? 'pdf' : 'image'])
-      const timer = setTimeout(() => p.kill(), 30 * 60_000) // recognising a long scanned book takes minutes
-      let stderr = ''
-      let pending = ''
-      let ocr = false
-      p.stderr.setEncoding('utf8').on('data', (chunk: string) => {
-        stderr += chunk
-        const lines = (pending + chunk).split('\n')
-        pending = lines.pop() ?? ''
-        for (const line of lines) {
-          const m = /^(pages|ocr|page) (\d+)$/.exec(line.trim())
-          if (!m) continue
-          const n = Number(m[2])
-          if (m[1] === 'pages') pages = n
-          if (m[1] === 'ocr') ocr = true
-          if (ocr) onProgress?.({ done: m[1] === 'page' ? n : n - 1, total: pages ?? 1, ocr })
-        }
-      })
-      p.on('error', reject)
-      p.on('close', (code) => {
-        clearTimeout(timer)
-        if (code === 0) return resolve()
-        const why = /Error: ((is|text)[^(\n]*)/.exec(stderr)?.[1]?.trim()
-        reject(new Error(why ?? `couldn't be read as ${pdf ? 'a PDF' : 'an image'}`))
-      })
+    let ocr = false
+    const { code, stderr } = await spawnLines('/usr/bin/osascript', ['-l', 'JavaScript', '-e', PDF_SCRIPT, file, out, pdf ? 'pdf' : 'image'], (line) => {
+      const m = /^(pages|ocr|page) (\d+)$/.exec(line)
+      if (!m) return
+      const n = Number(m[2])
+      if (m[1] === 'pages') pages = n
+      if (m[1] === 'ocr') ocr = true
+      if (ocr) onProgress?.({ done: m[1] === 'page' ? n : n - 1, total: pages ?? 1, ocr })
     })
+    if (code !== 0) throw new Error(/Error: ((is|text)[^(\n]*)/.exec(stderr)?.[1]?.trim() ?? `couldn't be read as ${pdf ? 'a PDF' : 'an image'}`)
     return { text: await fs.promises.readFile(out, 'utf8'), pages }
   })
 }

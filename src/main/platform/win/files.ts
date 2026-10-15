@@ -1,7 +1,7 @@
 // Mode files on Windows, with what it ships instead of macOS's: tar.exe opens .docx, .odt and .epub, PDF.js (unpdf)
 // reads a PDF's text, Windows' own text recognition (Windows.Media.Ocr, through PowerShell) reads scans and images,
 // and binarydocs.ts reads Word 97-2003 and web archives.
-import { execFile, spawn } from 'node:child_process'
+import { execFile } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { promisify } from 'node:util'
@@ -9,7 +9,7 @@ import { webArchiveHtml, wordDocText } from '../../../shared/binarydocs'
 import { htmlText as fromHtml, isUtf8, officeXmlText, rtfText, wordMlText } from '../../../shared/doctext'
 import { withTemp } from '../../temp'
 import { IMAGES } from '../formats'
-import { POWERSHELL, TAR } from '../system'
+import { POWERSHELL, spawnLines, TAR } from '../system'
 import type { FileProgress as Progress } from '../types'
 
 const run = promisify(execFile)
@@ -130,28 +130,13 @@ function recognize(file: string, kind: 'image' | 'pdf', pages: number[], onProgr
     const out = path.join(tmp, 'out.json')
     await fs.promises.writeFile(script, OCR_SCRIPT)
     const args = ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script, path.resolve(file), out, kind, pages.join(',')]
-    await new Promise<void>((resolve, reject) => {
-      const p = spawn(POWERSHELL, args, { windowsHide: true })
-      const timer = setTimeout(() => p.kill(), 30 * 60_000)
-      let stderr = ''
-      let pending = ''
-      p.stderr.setEncoding('utf8').on('data', (chunk: string) => {
-        stderr += chunk
-        const lines = (pending + chunk).split(/\r?\n/)
-        pending = lines.pop() ?? ''
-        for (const line of lines) {
-          const m = /^(ocr|page) (\d+)$/.exec(line.trim())
-          if (m) onProgress?.({ done: list.indexOf(Number(m[2])) + (m[1] === 'page' ? 1 : 0), total: list.length, ocr: true })
-        }
-      })
-      p.on('error', reject)
-      p.on('close', (code) => {
-        clearTimeout(timer)
-        if (code === 0) return resolve()
-        const why = /no text recognition language installed/.test(stderr) ? "can't be read: Windows has no text recognition language installed" : `couldn't be read as ${kind === 'pdf' ? 'a PDF' : 'an image'}`
-        reject(new Error(why))
-      })
+    const { code, stderr } = await spawnLines(POWERSHELL, args, (line) => {
+      const m = /^(ocr|page) (\d+)$/.exec(line)
+      if (m) onProgress?.({ done: list.indexOf(Number(m[2])) + (m[1] === 'page' ? 1 : 0), total: list.length, ocr: true })
     })
+    if (code !== 0) {
+      throw new Error(/no text recognition language installed/.test(stderr) ? "can't be read: Windows has no text recognition language installed" : `couldn't be read as ${kind === 'pdf' ? 'a PDF' : 'an image'}`)
+    }
     const json = JSON.parse((await fs.promises.readFile(out, 'utf8')).trim() || '{}') as Record<string, string | string[]>
     return Object.fromEntries(Object.entries(json).map(([k, v]) => [k, Array.isArray(v) ? v.join('\n') : v ?? '']))
   })

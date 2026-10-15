@@ -169,6 +169,17 @@ export type Source = 'mic' | 'system'
 export interface Person { id: string; name: string; centroid: number[]; weight: number }
 export interface Voice { id: string; label: string; centroid: number[]; seconds: number; lines: number; source: Source; asked: boolean }
 
+function addToPerson(p: Person, v: Vec, seconds: number) {
+  p.centroid = blend(p.centroid, p.weight, v, seconds)
+  p.weight = Math.min(PERSON_WEIGHT_CAP_S, p.weight + seconds)
+}
+
+function foldVoice(into: Voice, from: Pick<Voice, 'centroid' | 'seconds' | 'lines'>) {
+  into.centroid = blend(into.centroid, into.seconds, from.centroid, from.seconds)
+  into.seconds += from.seconds
+  into.lines += from.lines
+}
+
 /**
  * Labels lines by voice for one session: saved people first, then voices heard this session, then a new voice.
  * Voices from the mic (a room) and from system audio (a call) never match each other: different people, and
@@ -195,14 +206,9 @@ export class SpeakerTracker {
     const [best, second] = ranked
     if (best && best.sim >= this.o.match && best.sim - (second?.sim ?? -1) >= this.o.margin) {
       const voice = this.voices.find((x) => x.id === best.id)
-      if (voice) {
-        voice.centroid = blend(voice.centroid, voice.seconds, v, seconds)
-        voice.seconds += seconds
-        voice.lines++
-      } else if (best.sim >= this.o.match + 0.1 && seconds >= 3) {
-        const p = this.people.find((x) => x.id === best.id)!
-        p.centroid = blend(p.centroid, p.weight, v, seconds)
-        p.weight = Math.min(PERSON_WEIGHT_CAP_S, p.weight + seconds)
+      if (voice) foldVoice(voice, { centroid: v, seconds, lines: 1 })
+      else if (best.sim >= this.o.match + 0.1 && seconds >= 3) {
+        addToPerson(this.people.find((x) => x.id === best.id)!, v, seconds)
         this.peopleChanged = true
       }
       return { id: best.id }
@@ -233,7 +239,7 @@ export class SpeakerTracker {
         .sort((a, b) => b.sim - a.sim)[0]
       if (!best || best.sim < this.o.match) continue
       const into = this.voices.find((x) => x === best.x)
-      if (into) Object.assign(into, { centroid: blend(into.centroid, into.seconds, v.centroid, v.seconds), seconds: into.seconds + v.seconds, lines: into.lines + v.lines })
+      if (into) foldVoice(into, v)
       this.voices = this.voices.filter((x) => x !== v)
       out.push({ drop: v.id, keep: best.x.id })
     }
@@ -261,9 +267,7 @@ export class SpeakerTracker {
     const [fromV, intoV, fromP, intoP] = [voice(fromId), voice(intoId), person(fromId), person(intoId)]
     if (!(fromV || fromP) || !(intoV || intoP)) throw new Error('that speaker is no longer available')
     if (fromV && intoV) {
-      intoV.centroid = blend(intoV.centroid, intoV.seconds, fromV.centroid, fromV.seconds)
-      intoV.seconds += fromV.seconds
-      intoV.lines += fromV.lines
+      foldVoice(intoV, fromV)
       this.voices = this.voices.filter((x) => x !== fromV)
       return { keep: intoId, drop: fromId }
     }
@@ -273,8 +277,7 @@ export class SpeakerTracker {
       this.save(v.id, p)
       return { keep: p.id, drop: v.id }
     }
-    intoP!.centroid = blend(intoP!.centroid, intoP!.weight, fromP!.centroid, fromP!.weight)
-    intoP!.weight = Math.min(PERSON_WEIGHT_CAP_S, intoP!.weight + fromP!.weight)
+    addToPerson(intoP!, fromP!.centroid, fromP!.weight)
     this.people = this.people.filter((x) => x !== fromP)
     return { keep: intoId, drop: fromId }
   }
@@ -286,8 +289,7 @@ export class SpeakerTracker {
     this.voices = this.voices.filter((x) => x !== voice)
     const existing = this.people.find((p) => p.id === person.id)
     if (existing) {
-      existing.centroid = blend(existing.centroid, existing.weight, voice.centroid, voice.seconds)
-      existing.weight = Math.min(PERSON_WEIGHT_CAP_S, existing.weight + voice.seconds)
+      addToPerson(existing, voice.centroid, voice.seconds)
       return existing
     }
     const p = { id: person.id, name: person.name, centroid: voice.centroid, weight: Math.min(PERSON_WEIGHT_CAP_S, voice.seconds) }
