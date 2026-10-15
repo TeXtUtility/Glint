@@ -16,6 +16,7 @@ import { complete } from './ai'
 import { failureLine, humanize } from './humanize'
 import { getState, patchState, subscribe } from './state'
 import { platform } from './platform'
+import { cleanName } from '../shared/speakers'
 
 const SAVE_EVERY_MS = 10_000
 const NOTES_DELAY_MS = 1500 // lets the chat panel's final messages land first
@@ -207,9 +208,7 @@ function mergeActions(had: ActionItem[], found: Omit<ActionItem, 'id' | 'done'>[
 
 /** A person's label in a saved session, renamed by hand from its notes. Their voice isn't saved; only the label. */
 export function renameSpeaker(sessionId: string, speakerId: string, name: unknown) {
-  const n = String(name ?? '').trim().replace(/\s+/g, ' ').slice(0, 40)
-  if (!n) throw new Error('Type a name first.')
-  relabelSpeaker(sessionId, speakerId, speakerId, n)
+  relabelSpeaker(sessionId, speakerId, speakerId, cleanName(name))
 }
 
 /** The user ticked an item or changed its date. */

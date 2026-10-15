@@ -365,3 +365,8 @@ export function refill(lines: LineVoice[], known: (source: Source) => { id: stri
   return changed
 }
 
+export const cleanName = (name: unknown) => {
+  const n = String(name ?? '').trim().replace(/\s+/g, ' ').slice(0, 40)
+  if (!n) throw new Error('Type a name first.')
+  return n
+}

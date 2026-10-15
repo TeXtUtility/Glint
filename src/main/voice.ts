@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { Worker } from 'node:worker_threads'
-import { EMBED_MAX_S, fillSpeaker, MeVoice, refill, SpeakerTracker, speakerCuts, unit, type LineVoice, type Person, type Source } from '../shared/speakers'
+import { cleanName, EMBED_MAX_S, fillSpeaker, MeVoice, refill, SpeakerTracker, speakerCuts, unit, type LineVoice, type Person, type Source } from '../shared/speakers'
 import type { TranscriptItem } from '../shared/state'
 import { fromPcm16, toPcm16 } from './audio-core'
 import { getState, patchState } from './state'
@@ -164,12 +164,6 @@ function save(reset = false) {
   fs.renameSync(tmp, storePath())
   unreadable = false
   publish()
-}
-
-export const cleanName = (name: unknown) => {
-  const n = String(name ?? '').trim().replace(/\s+/g, ' ').slice(0, 40)
-  if (!n) throw new Error('Type a name first.')
-  return n
 }
 
 // The user's voiceprint
