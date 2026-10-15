@@ -8,11 +8,7 @@ const be = (b: Uint8Array, o: number, n: number) => {
   for (let i = 0; i < n; i++) v = v * 256 + b[o + i]
   return v
 }
-const utf16 = (b: Uint8Array, bigEndian = false) => {
-  const s = new Uint8Array(b.length - (b.length % 2))
-  for (let i = 0; i < s.length; i += 2) (s[i] = b[i + (bigEndian ? 1 : 0)]), (s[i + 1] = b[i + (bigEndian ? 0 : 1)])
-  return new TextDecoder('utf-16le').decode(s)
-}
+const utf16 = (b: Uint8Array, bigEndian = false) => new TextDecoder(bigEndian ? 'utf-16be' : 'utf-16le').decode(b.subarray(0, b.length - (b.length % 2)))
 
 const END = 0xfffffffe
 

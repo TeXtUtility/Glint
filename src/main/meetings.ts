@@ -6,7 +6,7 @@ import { platform } from './platform'
 import { getState, patchState } from './state'
 
 /** The calls going on now, by app name ("Zoom", "Google Meet"). */
-export function currentCalls(): string[] {
+function currentCalls(): string[] {
   const users = platform.micUsers()
   if (!users.length) return []
   return callsNow(users, browserHasMic(users) ? platform.openWindows() : [])

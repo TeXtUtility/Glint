@@ -20,11 +20,11 @@ export async function inviteFor(sessionId: string, startedAt: number): Promise<C
   if (invites.has(sessionId)) return invites.get(sessionId)!
   const link = statusOf('calendar') === 'saved'
   const cal = platform.calendar
-  const os = !!cal && (await (link ? cal.access() : cal.request())) === 'granted'
+  const os = (await (link ? cal.access() : cal.request())) === 'granted'
   if (!os && !link) return null // asked again next time, in case it's allowed by then
   const read = (events: Promise<CalendarEvent[]>, from: string) =>
     events.catch((err: Error) => (console.warn(`[calendar] could not read ${from}:`, err.message), []))
-  const events = await Promise.all([os ? read(cal!.events(startedAt), 'events') : [], link ? read(readFeed(getKey('calendar')!, startedAt - 6 * HOUR, startedAt + HOUR), 'the calendar link') : []])
+  const events = await Promise.all([os ? read(cal.events(startedAt), 'events') : [], link ? read(readFeed(getKey('calendar')!, startedAt - 6 * HOUR, startedAt + HOUR), 'the calendar link') : []])
   const invite = pickInvite(events.flat(), startedAt)
   invites.set(sessionId, invite)
   return invite

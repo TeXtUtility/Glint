@@ -326,7 +326,6 @@ export interface State extends Persisted {
   appVersion: string
   /** OS, architecture and Electron/Chromium versions, for bug reports. */
   systemInfo: string
-  platform: string
   openAtLogin: boolean
   overlayVisible: boolean
   windowsLoaded: { controlBar: boolean; chat: boolean }
@@ -448,7 +447,6 @@ const PAUSE_DEFAULT: State['pause'] = { paused: false, pausedTotalMs: 0 }
 export const RUNTIME_DEFAULTS: Omit<State, keyof Persisted> = {
   appVersion: '',
   systemInfo: '',
-  platform: '',
   openAtLogin: false,
   overlayVisible: true,
   windowsLoaded: { controlBar: false, chat: false },
@@ -497,7 +495,6 @@ export function isNewer(latest: string, current: string): boolean {
 export const INACTIVITY_MS = 10 * 60_000
 export const INACTIVITY_COUNTDOWN_S = 40
 
-// ponytail: no auth yet, so no splash phase and no signed-out check. Add both with the auth provider.
 export function phase(s: State): 'onboarding' | 'app' {
   // A permission taken back after setup brings setup back, to say which and where to allow it. Windows has no screen
   // permission (it reports it granted); its mic one is the Privacy switch for every desktop app.
@@ -609,20 +606,8 @@ export function loadPersisted(json: string): { value: Persisted; rejected: strin
   if (!isObj(raw)) throw new Error('state.json is not an object')
   const d = PERSISTED_DEFAULTS
   const group = <K extends keyof Persisted>(k: K) => ({ ...(d[k] as object), ...(isObj(raw[k]) ? pick(raw[k], Object.keys(d[k] as object)) : {}) })
-  const out: Record<string, unknown> = {
-    ...d,
-    ...pick(raw, Object.keys(d)),
-    permissions: { ...d.permissions, ...(isObj(raw.permissions) ? raw.permissions : {}) },
-    shortcuts: group('shortcuts'),
-    ai: group('ai'),
-    transcription: group('transcription'),
-    vad: group('vad'),
-    voice: group('voice'),
-    glance: group('glance'),
-    opacity: group('opacity'),
-    screenshotNote: group('screenshotNote'),
-    humanizer: group('humanizer'),
-  }
+  const groups = ['permissions', 'shortcuts', 'ai', 'transcription', 'vad', 'voice', 'glance', 'opacity', 'screenshotNote', 'humanizer'] as const
+  const out: Record<string, unknown> = { ...d, ...pick(raw, Object.keys(d)), ...Object.fromEntries(groups.map((k) => [k, group(k)])) }
   // Settings from before fast and smart models were separate: the old default (Opus) is now the smart model's, and
   // fast answers get the fast default. A model the user picked stays their fast model.
   if (isObj(raw.ai) && !('anthropicSmartModel' in raw.ai) && raw.ai.anthropicModel === 'claude-opus-5') out.ai = { ...(out.ai as object), anthropicModel: d.ai.anthropicModel }

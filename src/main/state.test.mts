@@ -53,8 +53,9 @@ test('flushState: writes a private temp file and renames it over state.json, eve
   assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).theme, 'dark')
 })
 
-test('flushState: a write that fails part-way leaves the old state.json whole', () => {
+test('flushState: a write that fails part-way leaves the old state.json whole, and is tried again', () => {
   const file = path.join(freshUserData(), 'state.json')
+  mock.timers.enable({ apis: ['setTimeout'] })
   initState({})
   patchState({ theme: 'light' })
   flushState()
@@ -68,4 +69,7 @@ test('flushState: a write that fails part-way leaves the old state.json whole', 
   flushState()
   mock.restoreAll()
   assert.equal(fs.readFileSync(file, 'utf8'), before)
+  mock.timers.tick(5_000)
+  mock.timers.reset()
+  assert.match(fs.readFileSync(file, 'utf8'), /"theme": "dark"/)
 })

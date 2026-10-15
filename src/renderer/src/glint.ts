@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from 'react'
 import type { State } from '../../shared/state'
 
 interface GlintBridge {
@@ -133,5 +133,28 @@ export function useGlass(selector: string, active: boolean, ax = 0.5) {
     events.forEach((ev) => window.addEventListener(ev, report))
     return () => (measureNow.current = null, cancelAnimationFrame(raf), mo.disconnect(), window.removeEventListener('resize', onResize), events.forEach((ev) => window.removeEventListener(ev, report)), glint.send('window:glass', { rects: [], vw: innerWidth }))
   }, [selector, active, ax])
+}
+
+/** Main sizes the window to exactly this content. */
+export function useGlanceSize(ref: RefObject<HTMLElement | null>, animate?: (el: HTMLElement) => boolean) {
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const send = () => {
+      const r = el.getBoundingClientRect()
+      glint.send('window:glance-size', { w: Math.ceil(r.width), h: Math.ceil(r.height), ...(animate && { animate: animate(el) }) })
+    }
+    send()
+    const ro = new ResizeObserver(send)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+}
+
+/** Layout sizes, not getBoundingClientRect: a popover's opening scale must not shrink the window under it. */
+export function bottomOf(e: HTMLElement, root: HTMLElement | null = null) {
+  let y = e.offsetHeight
+  for (let n: HTMLElement | null = e; n && n !== root; n = n.offsetParent as HTMLElement | null) y += n.offsetTop
+  return y
 }
 

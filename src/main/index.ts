@@ -27,13 +27,13 @@ import { addToCalendar, draftFollowUp, generateNotes, macSleeps, macWakes, initH
 import { deleteMe, deletePerson, endVoiceSession, enrollMe, forgetEveryone, initVoice, mergeSpeakers, nameVoice, renamePerson, settleSpeakers, skipVoice, voiceAudio, voiceSessionId } from './voice'
 import { platform } from './platform'
 import type { GlassRect } from './platform/types'
-import { installedTerminals, runInTerminal } from './run'
+import { runInTerminal } from './run'
 import { captureScreen } from './screenshot'
 import { updateShortcuts } from './shortcuts'
 import { cancelQueuedUpdate, checkForUpdate, initUpdates, installUpdate } from './update'
 import { changedKeys, flushState, getState, initState, patchState, resetAllState, subscribe } from './state'
 import {
-  APP_ORIGIN, blurChat, DEV_URL, focusChat, focusOverlay, getWin, moveBy, onDisplaysChanged, openFollowUp, openSettings, originOf, painted, resetPosition, setBarHit, setBarSize, setGlanceSize, setPanelHeight, startDrag, startResize, stopTracking, updateWindows,
+  APP_ORIGIN, blurOverlay, DEV_URL, focusOverlay, getWin, moveBy, onDisplaysChanged, openFollowUp, openSettings, originOf, painted, resetPosition, setBarHit, setBarSize, setGlanceSize, setPanelHeight, startDrag, startResize, stopTracking, updateWindows,
 } from './windows'
 
 const RENDERER_DIR = path.join(__dirname, '../renderer')
@@ -56,7 +56,6 @@ console.error = (...args: unknown[]) => {
 process.on('uncaughtException', (err) => console.error('[main] uncaught exception:', err))
 process.on('unhandledRejection', (reason) => console.error('[main] unhandled rejection:', reason))
 
-// ponytail: macOS only routes glint:// to a packaged build whose Info.plist declares the scheme. Add it in the packager config.
 if (process.defaultApp) app.setAsDefaultProtocolClient('glint', process.execPath, [path.resolve(process.argv[1] ?? '.')])
 else app.setAsDefaultProtocolClient('glint')
 
@@ -85,7 +84,6 @@ function handleLink(raw: string) {
   const [area, page] = [url.host, ...url.pathname.split('/').filter(Boolean)]
   // Any web page can fire a glint:// link, so only known links do anything, and none shows the overlay (a page could
   // fire one mid screen-share).
-  // ponytail: glint://auth/* needs an auth provider to hand the token to, and there isn't one yet.
   if (area !== 'settings') return
   openSettings(page)
 }
@@ -152,7 +150,7 @@ function boot() {
   if (safeStorage.isEncryptionAvailable()) safeStorage.encryptString('x')
 
   const systemInfo = `${platform.name} ${process.getSystemVersion()} (${process.arch}) · Electron ${process.versions.electron} · Chromium ${process.versions.chrome}`
-  initState({ appVersion: app.getVersion(), systemInfo, platform: process.platform,openAtLogin: app.getLoginItemSettings().openAtLogin, aiKeys: keyStatus() })
+  initState({ appVersion: app.getVersion(), systemInfo, openAtLogin: app.getLoginItemSettings().openAtLogin, aiKeys: keyStatus() })
   checkPermissions()
   platform.offerToMove()
 
@@ -365,7 +363,7 @@ function registerIpc() {
   on('window:painted', (e) => painted(e.sender.id))
   // A code block's Run: the user's terminal, behind a y/N prompt.
   handle('run:commands', (_e, code: unknown) => runInTerminal(String(code ?? '').slice(0, 20_000), getState().terminalApp, getState().runNewWindow))
-  handle('run:terminals', () => installedTerminals())
+  handle('run:terminals', () => platform.terminals())
   on('window:drag-start', startDrag)
   on('window:drag-end', () => {
     if (stopTracking()) return
@@ -387,19 +385,17 @@ function registerIpc() {
   on('window:bar-size', (_e, size: unknown) => setBarSize(size))
   on('window:bar-hit', (_e, hit: unknown) => setBarHit(hit))
   on('window:panel-height', (_e, h: unknown) => setPanelHeight(h))
-  handle('window:focus-chat', () => focusChat())
+  handle('window:focus-chat', () => focusOverlay('chat'))
   handle('window:focus-bar', () => focusOverlay('controlBar'))
   // The capsule's Ask and Stop drive the chat panel, which owns the thread.
   on('chat:ask', () => sendToChat('chat:submit'))
   on('chat:stop', () => sendToChat('chat:stop'))
   // The capsule's chat-box button: show the panel ready to type in, or hide it.
   on('chat:toggle', () => {
-    const s = getState()
-    if (s.overlayVisible && s.chat.visible) return patchState({ chat: { visible: false } })
-    patchState({ overlayVisible: true, chat: { visible: true } })
-    sendToChat('chat:focus')
+    toggleChat()
+    if (getState().chat.visible) sendToChat('chat:focus')
   })
-  on('window:blur-chat', blurChat)
+  on('window:blur-chat', () => blurOverlay('chat'))
   on('window:open-settings', (_e, page?: string) => openSettings(page))
   on('window:open-followup', (_e, id?: string) => openFollowUp(id))
   on('notes:dismiss', () => patchState({ notesReady: null }))
@@ -449,12 +445,12 @@ function registerIpc() {
 
   on('session:start', startSession)
   on('call:dismiss', () => patchState({ callDetected: null }))
-  handle('calendar:status', () => platform.calendar?.access() ?? 'denied')
+  handle('calendar:status', () => platform.calendar.access())
   handle('calendar:link', () => statusOf('calendar'))
   handle('calendar:set-link', (_e, url: unknown) => saveLink(url == null ? null : String(url)))
   handle('calendar:allow', async () => {
-    const access = (await platform.calendar?.request()) ?? 'denied'
-    if (access === 'denied') platform.calendar?.openSettings()
+    const access = await platform.calendar.request()
+    if (access === 'denied') platform.calendar.openSettings()
     return access
   })
   on('session:stop', () => void stopSession())
@@ -565,7 +561,7 @@ function registerIpc() {
         return { ...r, humanized: { text: out.text, words: out.words, ms: out.ms } }
       } catch (err) {
         if (ctrl.signal.aborted) return { ...r, humanized: { stopped: true } }
-        const reason = err instanceof HumanizeError ? err.message : (err as Error).message
+        const reason = (err as Error).message
         patchState({ aiFailure: failureLine(reason) }) // loud, like a failing provider: red capsule and menu bar
         return { ...r, humanized: { error: reason } }
       }
@@ -674,7 +670,7 @@ function runShortcut(action: ShortcutAction) {
     toggleGlance: () => patchState({ layout: getState().layout === 'glance' ? 'full' : 'glance', overlayVisible: true }),
     toggleGhost: () => patchState({ layout: getState().layout === 'ghost' ? 'full' : 'ghost', overlayVisible: true }),
     ghostAsk: () => sendToChat('chat:submit'), // the same ask as ⌘↩: Ghost answers what's on screen
-    ghostPrompt: () => focusChat() && sendToChat('ghost:prompt'), // a box that can't take the keys (focus locked) never opens
+    ghostPrompt: () => focusOverlay('chat') && sendToChat('ghost:prompt'), // a box that can't take the keys (focus locked) never opens
     ghostPrev: () => sendToChat('ghost:browse', -1),
     ghostNext: () => sendToChat('ghost:browse', 1),
     ghostBack: () => sendToChat('ghost:word', -1),

@@ -49,6 +49,12 @@ test('wrapper: shows the commands, runs them only on y, in the same shell', { sk
   fs.writeFileSync(path.join(own, 'run.sh'), wrapper('bash', cmds, `touch '${marker}'`, own))
   execFileSync('/bin/bash', ['-c', `source '${path.join(own, 'run.sh')}'`], { input: 'n', env: { ...process.env, TERM: 'dumb' } })
   assert.equal(fs.existsSync(own), false)
+  assert.doesNotMatch(no, /scroll up/)
+  const long = Array.from({ length: 30 }, (_, i) => `echo ${i}`).join('\n')
+  fs.writeFileSync(wrap, wrapper('bash', cmds, long))
+  assert.match(shell('n'), /echo 29\n[^]*Check these[^]*\(30 lines; scroll up to read all of it\)/)
+  assert.match(wrapper('zsh', cmds, long), /\(30 lines; scroll up to read all of it\)[^\n]*\nif read/)
+  assert.match(psWrapper(cmds, long), /\(30 lines; scroll up to read all of it\)[^\n]*\r\nWrite-Host -NoNewline 'Run it\? \[y\/N\] '/)
   fs.rmSync(dir, { recursive: true })
 })
 

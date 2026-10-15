@@ -5,19 +5,20 @@
 import { app } from 'electron'
 import * as ort from 'onnxruntime-node'
 import path from 'node:path'
+import { setTimeout as sleep } from 'node:timers/promises'
 import { isEcho, meVerdict, overlapShare, SPLIT_MIN_S } from '../shared/speakers'
 import { elapsedMs, phase, speechModelFor, type Role, type State, type TranscriptItem } from '../shared/state'
 import { getKey } from './ai'
-import { RoleStream, s16ToF32, SilentCall, VadStream, type SegEvent } from './audio-core'
+import { fromPcm16, RoleStream, SilentCall, VadStream, type SegEvent } from './audio-core'
 import { getState, patchState, subscribe } from './state'
-import { loadLocalAsr, transcribeLocal, transcribeOpenAi, unloadLocalAsr } from './stt'
+import { modelsDir } from './models'
+import { loadLocalAsr, transcribeOpenAi, unloadLocalAsr } from './stt'
 import { embed, endVoiceSession, label, learnMe, loadVoiceModel, meScore, speakerChanges, unloadVoiceModel } from './voice'
 import { verbose } from './log'
 import { platform } from './platform'
 import { downloadLiveWords, LIVE_WORDS_MB, liveAudio, liveEnd, liveShown, liveStart, liveWanted, prepareLiveWords, stopLiveWords } from './live-words'
 
 const MODEL_PATH = path.join(app.isPackaged ? process.resourcesPath : app.getAppPath(), app.isPackaged ? '' : 'resources', 'silero_vad.onnx')
-const MODELS_DIR = () => path.join(app.getPath('userData'), 'models')
 /** Chunks per pipeline waiting for VAD (~10 s of 100 ms chunks): rides out a main-process stall instead of losing speech. */
 const QUEUE_MAX = 100
 const FLUSH_WAIT_MS = 4000
@@ -135,7 +136,7 @@ async function start() {
     warmModels()
     if (!platform.callAudio) return // the chat window sends the call (pushCall)
     const stopIt = await platform.callAudio.start(
-      (bytes) => gen === generation && callChunk(s16ToF32(toInt16(bytes))),
+      (bytes) => gen === generation && callChunk(fromPcm16(bytes)),
       (err) => gen === generation && helperFailed(err),
     )
     if (gen === generation) stopCall = stopIt
@@ -177,7 +178,7 @@ async function drain(ps: Record<Role, Pipeline>) {
     } catch (err) {
       console.error(`[audio] ${role} VAD failed while finishing:`, err)
     }
-    handle(role, p.stream.flush(), p)
+    handle(role, p.stream.seg.flush(), p)
     p.stream.reset()
   }
 }
@@ -192,12 +193,12 @@ function helperFailed(err: Error) {
 
 /** Mic chunks from the chat window (16 kHz PCM16). */
 export function pushMic(bytes: Uint8Array) {
-  enqueue('me', s16ToF32(toInt16(bytes)))
+  enqueue('me', fromPcm16(bytes))
 }
 
 /** The call's chunks from the chat window's loopback capture (16 kHz PCM16). */
 export function pushCall(bytes: Uint8Array) {
-  if (!platform.callAudio && capturing) callChunk(s16ToF32(toInt16(bytes)))
+  if (!platform.callAudio && capturing) callChunk(fromPcm16(bytes))
 }
 
 function callChunk(samples: Float32Array) {
@@ -205,12 +206,6 @@ function callChunk(samples: Float32Array) {
   if (heard === 'blocked' && !getState().audioError) patchState({ audioError: CALL_BLOCKED, chat: SHOW })
   else if (heard === 'back' && getState().audioError === CALL_BLOCKED) patchState({ audioError: null })
   enqueue('them', samples)
-}
-
-function toInt16(bytes: Uint8Array) {
-  const copy = new Uint8Array(bytes.byteLength - (bytes.byteLength % 2))
-  copy.set(bytes.subarray(0, copy.length))
-  return new Int16Array(copy.buffer) // copy: Node buffers can be unaligned
 }
 
 function enqueue(role: Role, samples: Float32Array) {
@@ -268,7 +263,7 @@ function queueSegment(role: Role, seg: Segment, p: Pipeline, heard: string) {
 /** Sends the speech so far (pre-speech pad included) to live words, from where the last send stopped. */
 function feedLive(role: Role, p: Pipeline) {
   const frames = p.stream.seg.seg
-  if (!p.stream.speaking || p.liveSent >= frames.length) return
+  if (!p.stream.seg.speaking || p.liveSent >= frames.length) return
   const fresh = frames.slice(p.liveSent)
   p.liveSent = frames.length
   const out = new Float32Array(fresh.reduce((n, f) => n + f.f.length, 0))
@@ -423,19 +418,16 @@ function transcribe(audio: Float32Array, language: string) {
   const t = getState().transcription
   return t.engine === 'openai'
     ? transcribeOpenAi(audio, t.openaiModel, language, getKey('openai'))
-    : transcribeLocal(audio, t.localModel, language, MODELS_DIR())
+    : loadLocalAsr(language, t.localModel, modelsDir()).then((asr) => asr(audio, language))
 }
 
 /** Load the models when a session starts so the first line isn't stuck behind a download. */
 function warmModels() {
   const s = getState()
-  if (s.speakerLabels || s.roomMode) {
-    loadVoiceModel().catch((err: Error) => {
-      if (getState().session?.id === s.session?.id) patchState({ audioError: `Couldn't load the voice model: ${err.message}`, chat: SHOW })
-    })
-  } else {
-    void loadVoiceModel().catch(() => {}) // echo checks use it too; without it they fall back to comparing words
-  }
+  // Echo checks use it too; without it they fall back to comparing words.
+  loadVoiceModel().catch((err: Error) => {
+    if ((s.speakerLabels || s.roomMode) && getState().session?.id === s.session?.id) patchState({ audioError: `Couldn't load the voice model: ${err.message}`, chat: SHOW })
+  })
   void prepareSpeech().then(() => prepareLive())
 }
 
@@ -447,13 +439,7 @@ export async function prepareModels(): Promise<string | null> {
   const why = await prepareSpeech()
   if (why) return why
   try {
-    if (liveWanted(getState())) {
-      let shown = -1
-      await downloadLiveWords(MODELS_DIR(), (pct) => {
-        const step = Math.floor(pct / 5) * 5
-        if (step !== shown) patchState({ sttStatus: `Downloading live words (${LIVE_WORDS_MB} MB)… ${(shown = step)}%` })
-      })
-    }
+    if (liveWanted(getState())) await downloadLiveWords(modelsDir(), downloading(`live words (${LIVE_WORDS_MB} MB)`))
     patchState({ sttStatus: 'Downloading the voice model (38 MB)…' })
     await loadVoiceModel()
     if (!getState().session) unloadVoiceModel() // downloaded; the session loads it
@@ -470,11 +456,7 @@ export async function prepareModels(): Promise<string | null> {
 function prepareLive() {
   const s = getState()
   if (!liveShown(s)) return
-  let shown = -1
-  prepareLiveWords(MODELS_DIR(), (pct) => {
-    const step = Math.floor(pct / 5) * 5
-    if (step !== shown) patchState({ sttStatus: `Downloading live words (${LIVE_WORDS_MB} MB)… ${(shown = step)}%` })
-  })
+  prepareLiveWords(modelsDir(), downloading(`live words (${LIVE_WORDS_MB} MB)`))
     .then(() => getState().sttStatus?.startsWith('Downloading live') && patchState({ sttStatus: null }))
     .catch((err: Error) => {
       console.warn('[live words] unavailable:', err.message)
@@ -486,20 +468,16 @@ function prepareLive() {
  * Downloads and loads the local speech model, with progress in `sttStatus`. Does nothing once it's loaded. Resolves
  * with why it failed, or null.
  */
-export function prepareSpeech(): Promise<string | null> {
+function prepareSpeech(): Promise<string | null> {
   const s = getState()
   const t = s.transcription
   if (t.engine !== 'local') return Promise.resolve(null)
-  let shown = -1
   const language = s.session?.language ?? t.language
+  const m = speechModelFor(language, t.localModel)
   const t0 = Date.now()
-  return loadLocalAsr(language, t.localModel, MODELS_DIR(), (pct) => {
-    const step = Math.floor(pct / 5) * 5
-    const m = speechModelFor(language, t.localModel)
-    if (step !== shown) patchState({ sttStatus: `Downloading ${m.label} (${m.mb} MB)… ${(shown = step)}%` })
-  })
+  return loadLocalAsr(language, t.localModel, modelsDir(), downloading(`${m.label} (${m.mb} MB)`))
     .then(() => {
-      verbose(`[models] ${speechModelFor(language, t.localModel).label} ready in ${Date.now() - t0} ms`)
+      verbose(`[models] ${m.label} ready in ${Date.now() - t0} ms`)
       patchState({ sttStatus: null })
       if (!getState().session) unloadLocalAsr() // downloaded ahead of a session (Settings, onboarding): no need to hold it
       return null
@@ -513,7 +491,13 @@ export function prepareSpeech(): Promise<string | null> {
     })
 }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+function downloading(what: string) {
+  let shown = -1
+  return (pct: number) => {
+    const step = Math.floor(pct / 5) * 5
+    if (step !== shown) patchState({ sttStatus: `Downloading ${what}… ${(shown = step)}%` })
+  }
+}
 
 /**
  * Ask and stop: force-end open segments and wait for pending lines so speech up to now is included.
@@ -525,7 +509,7 @@ export async function flushAudio() {
   const ps = pipes
   if (ps) {
     await Promise.race([Promise.all(ROLES.map((r) => ps[r].pumping)), sleep(1000)]) // let queued chunks reach VAD first, briefly
-    for (const role of ROLES) handle(role, ps[role].stream.flush(), ps[role])
+    for (const role of ROLES) handle(role, ps[role].stream.seg.flush(), ps[role])
   }
   await settle(deadline)
 }

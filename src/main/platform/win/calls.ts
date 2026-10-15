@@ -44,6 +44,17 @@ function subkeys(key: number): string[] {
   }
 }
 
+function imagePath(pid: number): string {
+  const n = winLib()
+  const proc = n.openProcess(0x1000, false, pid) // PROCESS_QUERY_LIMITED_INFORMATION
+  if (!proc) return ''
+  const buf = new Uint16Array(1024)
+  const len = [buf.length]
+  const out = n.imageName(proc, 0, buf, len) ? utf16(buf, len[0]) : ''
+  n.closeHandle(proc)
+  return out
+}
+
 /** Full paths of the programs running now, lower-cased. */
 export function runningExes(): Set<string> {
   const n = winLib()
@@ -52,12 +63,8 @@ export function runningExes(): Set<string> {
   if (!n.enumProcesses(pids, pids.byteLength, bytes)) return new Set()
   const out = new Set<string>()
   for (const pid of pids.subarray(0, bytes[0] / 4)) {
-    const proc = n.openProcess(0x1000, false, pid) // PROCESS_QUERY_LIMITED_INFORMATION
-    if (!proc) continue
-    const buf = new Uint16Array(1024)
-    const len = [buf.length]
-    if (n.imageName(proc, 0, buf, len)) out.add(utf16(buf, len[0]).toLowerCase())
-    n.closeHandle(proc)
+    const exe = imagePath(pid)
+    if (exe) out.add(exe.toLowerCase())
   }
   return out
 }
@@ -110,13 +117,7 @@ export function openWindows(): { app: string; title: string }[] {
   const exes = new Map<number, string>()
   const out: { app: string; title: string }[] = []
   const exeOf = (pid: number) => {
-    if (!exes.has(pid)) {
-      const proc = n.openProcess(0x1000, false, pid) // PROCESS_QUERY_LIMITED_INFORMATION
-      const buf = new Uint16Array(1024)
-      const len = [buf.length]
-      exes.set(pid, proc && n.imageName(proc, 0, buf, len) ? utf16(buf, len[0]).split('\\').at(-1)!.toLowerCase() : '')
-      if (proc) n.closeHandle(proc)
-    }
+    if (!exes.has(pid)) exes.set(pid, imagePath(pid).split('\\').at(-1)!.toLowerCase())
     return exes.get(pid)!
   }
   const cb = koffi.register((hwnd: unknown) => {

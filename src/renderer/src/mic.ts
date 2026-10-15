@@ -2,12 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import { glint, isMac, patch } from './glint'
 
 /** Session capture settings; the Settings mic test uses the same so its meter matches what gets transcribed. */
-export const MIC_CONSTRAINTS: MediaTrackConstraints = { channelCount: 1, echoCancellation: false, noiseSuppression: true, autoGainControl: true }
+const MIC_CONSTRAINTS: MediaTrackConstraints = { channelCount: 1, echoCancellation: false, noiseSuppression: true, autoGainControl: true }
 /** Room mode: no gain control, since loudness is a clue to who is nearest the mic (the user). */
 const ROOM_CONSTRAINTS: MediaTrackConstraints = { ...MIC_CONSTRAINTS, autoGainControl: false }
 
 /** The system's default input, as Chromium lists it ("Default - AirPods"). */
-const defaultMic = async () => (await navigator.mediaDevices.enumerateDevices()).find((d) => d.kind === 'audioinput' && d.deviceId === 'default')?.label
+export const defaultMic = async () => (await navigator.mediaDevices.enumerateDevices()).find((d) => d.kind === 'audioinput' && d.deviceId === 'default')?.label
 
 /**
  * Streams 16 kHz PCM16 chunks (100 ms) from the mic until the returned function is called. `onEnded` (once): the device
@@ -60,62 +60,44 @@ async function openPcm(stream: MediaStream, onChunk: (pcm16: ArrayBuffer) => voi
 }
 
 export function useMicCapture(active: boolean, room: boolean) {
-  useEffect(() => {
-    if (!active) return
-    let cancelled = false
-    let close: (() => void) | undefined
-    let failures = 0
-    let retry: ReturnType<typeof setTimeout> | undefined
-    // A mic that goes away mid-session reopens on the current default, so the session doesn't go quietly deaf.
-    const open = () => {
-      openMic((pcm) => glint.send('audio:mic', new Uint8Array(pcm)), room ? ROOM_CONSTRAINTS : MIC_CONSTRAINTS, () => {
-        close?.()
-        close = undefined
-        if (!cancelled) retry = setTimeout(open, 500)
-      }).then(
-        (c) => {
-          if (cancelled) return c() // cleanup ran before the mic opened
-          close = c
-          failures = 0
-        },
-        (err) => {
-          if (cancelled) return
-          if (++failures < 3) retry = setTimeout(open, 1000)
-          else void patch({ audioError: `Microphone unavailable: ${err instanceof Error ? err.message : String(err)}` })
-        },
-      )
-    }
-    open()
-    return () => {
-      cancelled = true
-      clearTimeout(retry)
-      close?.()
-    }
-  }, [active, room])
+  useCapture(active, (ended) => openMic((pcm) => glint.send('audio:mic', new Uint8Array(pcm)), room ? ROOM_CONSTRAINTS : MIC_CONSTRAINTS, ended),
+    'Microphone unavailable', false, room)
 }
 
 /** The call's side on Windows; macOS hears it in main (audiotee). Reopened when output devices change. */
 export function useCallCapture(active: boolean) {
+  useCapture(active && !isMac, (ended) => openCall((pcm) => glint.send('audio:call', new Uint8Array(pcm)), ended), "Couldn't hear the call", true)
+}
+
+function useCapture(active: boolean, start: (onEnded: () => void) => Promise<() => void>, failed: string, onDeviceChange: boolean, variant?: unknown) {
   useEffect(() => {
-    if (!active || isMac) return
+    if (!active) return
     let cancelled = false
     let close: (() => void) | undefined
+    let opening = 0
     let failures = 0
     let retry: ReturnType<typeof setTimeout> | undefined
+    const reopen = () => (clearTimeout(retry), (retry = setTimeout(open, 500)))
+    // A mic that goes away mid-session reopens on the current default, so the session doesn't go quietly deaf.
     const open = () => {
+      const n = ++opening
       close?.()
       close = undefined
-      openCall((pcm) => glint.send('audio:call', new Uint8Array(pcm)), () => !cancelled && (clearTimeout(retry), (retry = setTimeout(open, 500)))).then(
-        (c) => (cancelled ? c() : ((close = c), (failures = 0))),
+      start(() => {
+        if (cancelled || n !== opening) return
+        close?.()
+        close = undefined
+        reopen()
+      }).then(
+        (c) => (cancelled || n !== opening ? c() : ((close = c), (failures = 0))),
         (err) => {
-          if (cancelled) return
-          if (++failures < 3) retry = setTimeout(open, 1000)
-          else void patch({ audioError: `Couldn't hear the call: ${err instanceof Error ? err.message : String(err)}` })
+          if (cancelled || n !== opening) return
+          if (++failures < 3) (clearTimeout(retry), (retry = setTimeout(open, 1000)))
+          else void patch({ audioError: `${failed}: ${err instanceof Error ? err.message : String(err)}` })
         },
       )
     }
-    const reopen = () => (clearTimeout(retry), (retry = setTimeout(open, 500)))
-    navigator.mediaDevices.addEventListener('devicechange', reopen)
+    if (onDeviceChange) navigator.mediaDevices.addEventListener('devicechange', reopen)
     open()
     return () => {
       cancelled = true
@@ -123,7 +105,7 @@ export function useCallCapture(active: boolean) {
       navigator.mediaDevices.removeEventListener('devicechange', reopen)
       close?.()
     }
-  }, [active])
+  }, [active, variant])
 }
 
 export interface Recording {
@@ -143,9 +125,7 @@ export async function startRecording(onLevel: (level: number) => void): Promise<
     const c = new Int16Array(pcm)
     chunks.push(c)
     samples += c.length
-    let peak = 0
-    for (const x of c) peak = Math.max(peak, Math.abs(x))
-    onLevel(Math.sqrt(peak / 0x8000))
+    onLevel(peak(pcm))
   })
   return {
     seconds: () => samples / 16000,
@@ -160,8 +140,14 @@ export async function startRecording(onLevel: (level: number) => void): Promise<
   }
 }
 
+export function peak(pcm16: ArrayBuffer) {
+  let p = 0
+  for (const x of new Int16Array(pcm16)) p = Math.max(p, Math.abs(x))
+  return Math.sqrt(p / 0x8000) // sqrt: normal speech lands mid-meter instead of near the bottom
+}
+
 /** Plays 16 kHz PCM16. Web Audio, since the page's CSP blocks media from blob: and data: URLs. */
-export function playPcm16(bytes: Uint8Array): { stop: () => void; ended: Promise<void> } | null {
+function playPcm16(bytes: Uint8Array): { stop: () => void; ended: Promise<void> } | null {
   const s16 = new Int16Array(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + (bytes.byteLength & ~1)))
   if (!s16.length) return null
   const ctx = new AudioContext({ sampleRate: 16000 })

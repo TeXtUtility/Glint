@@ -6,7 +6,7 @@ import { app, safeStorage, shell } from 'electron'
 import type { SavedMessage } from '../shared/history.ts'
 import type { Session } from '../shared/state.ts'
 import { freshUserData } from '../test/electron.ts'
-import { initHistory, listSessions, loadSession, macSleeps, macWakes, saveChat, trashSession, updateNotes } from './history.ts'
+import { generateNotes, initHistory, listSessions, loadSession, macSleeps, macWakes, saveChat, trashSession, updateNotes } from './history.ts'
 import { getState, initState, patchState } from './state.ts'
 
 // Autosaves run every 10 s, and an ended session's notes would call the AI: time only moves when a test ticks it.
@@ -111,4 +111,20 @@ test('notes cut off by the Mac sleeping are written again once it wakes', async 
   const r = loadSession('slept-1')
   assert.equal(r.notesStatus, 'failed')
   assert.doesNotMatch(r.notesError ?? '', /went to sleep/, 'tried again after waking (and failed for its own reason)')
+})
+
+test('notes asked for while they are being written are written again after', async () => {
+  freshUserData()
+  patchState({ ai: { ...getState().ai, provider: 'openai', fallbacks: [] } })
+  const settle = async () => { for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r)) }
+  const live: Session = { id: 'again-1', chatId: 'c3', language: 'en', startedAt: Date.now(), isResumed: false, priorElapsedMs: 0, transcript: [line('Ship it Friday.', 1_000)] }
+  patchState({ session: live })
+  patchState({ session: null })
+  const errors = mock.method(console, 'error', () => {})
+  const first = generateNotes('again-1')
+  void generateNotes('again-1')
+  await first
+  await settle()
+  mock.restoreAll()
+  assert.equal(errors.mock.calls.filter((c) => c.arguments[0] === '[history] notes failed:').length, 2)
 })

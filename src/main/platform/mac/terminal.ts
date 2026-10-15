@@ -57,6 +57,7 @@ async function idle(tty: string): Promise<boolean> {
 export function wrapper(shell: 'zsh' | 'bash', commandsFile: string, commands: string, cleanup?: string): string {
   const end = `__GLINT_${randomBytes(6).toString('hex')}__`
   const q = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`
+  const lines = commands.split('\n').length
   const ask = shell === 'zsh'
     ? `read -q "?Run it? [y/N] "`
     : `read -r -n 1 -p "Run it? [y/N] " __glint_ans && [[ $__glint_ans == [yY] ]]`
@@ -66,6 +67,7 @@ export function wrapper(shell: 'zsh' | 'bash', commandsFile: string, commands: s
     commands,
     end,
     `printf '\\n\\033[31mCheck these before you press y: commands can change or delete files, and AI can get them wrong.\\033[0m\\n'`,
+    ...(lines > 20 ? [`printf '\\033[1m(${lines} lines; scroll up to read all of it)\\033[0m\\n'`] : []),
     `if ${ask}; then`,
     `  printf '\\n\\n'`,
     `  source ${q(commandsFile)}`,

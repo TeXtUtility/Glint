@@ -1,7 +1,7 @@
-import { Fragment, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { HUMANIZER_LABELS, HUMANIZER_OPTIONS, HUMANIZERS, type HumanizerCustom, type HumanizerService } from '../../shared/humanize'
 import { MODE_TEMPLATES } from '../../shared/prompt'
-import { PROVIDER_LABELS } from '../../shared/providers'
+import { chooseFirst, PROVIDER_LABELS } from '../../shared/providers'
 import {
   AI_PROVIDERS, clashesWithEditing, CORNERS, DEFAULT_SHORTCUTS, GLANCE_COOLDOWN_RANGE, isDivider, isNewer, isSystemShortcut, NOTE_MAX, PERSISTED_DEFAULTS, prettyAccelerator, TERMINAL_APPS, toAccelerator, LOCAL_WHISPER_MODELS,
   OPACITY_DEFAULTS, OPACITY_RANGES, searchesFiles, VAD_DEFAULTS, VAD_RANGES, VOICE_DEFAULTS, VOICE_RANGES,
@@ -11,8 +11,8 @@ import notes from '../../../CHANGELOG.md?raw'
 import { CapsuleItemView, languageOptions } from './ControlBar'
 import { COMPUTER, ENCRYPTED, glint, isMac, KEY_GONE, OS, patch, useAppState } from './glint'
 import { Icon } from './icons'
-import { MIC_CONSTRAINTS, startRecording, usePlayback, type Recording } from './mic'
-import { ConfirmButton, DraftTextarea, Segmented } from './ui'
+import { defaultMic, openMic, peak, startRecording, usePlayback, type Recording } from './mic'
+import { ConfirmButton, DraftTextarea, Range, Segmented, useAutosave } from './ui'
 
 declare const __GLINT_COMMIT__: string // electron.vite.config.ts
 
@@ -139,20 +139,6 @@ function Toggle({ label, hint, checked, disabled, onChange }: {
   )
 }
 
-function Slider({ label, hint, range: [min, max, step], value, fallback, format = String, onChange }: {
-  label: string; hint?: string; range: [number, number, number]; value: number; fallback: number
-  format?: (v: number) => string; onChange: (v: number) => void
-}) {
-  return (
-    <Row as="label" label={label} hint={hint && `${hint}${value !== fallback ? ` Default: ${format(fallback)}.` : ''}`}>
-      <input type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} style={fill(value, min, max)} />
-      <output className="num">{format(value)}</output>
-      <button className="reset" data-tip={`Reset to ${format(fallback)}`} aria-label={`Reset ${label}`} disabled={value === fallback}
-        onClick={(e) => (e.preventDefault(), onChange(fallback))}>↺</button>
-    </Row>
-  )
-}
-
 // General
 
 function General({ s, onReleaseNotes }: { s: State; onReleaseNotes: () => void }) {
@@ -194,8 +180,13 @@ function General({ s, onReleaseNotes }: { s: State; onReleaseNotes: () => void }
           checked={s.ghostAutoSkip} onChange={(v) => patch({ ghostAutoSkip: v })} />
         <Toggle label="Glance answers questions automatically" hint="One-line answers when someone else asks something. No screenshot is taken."
           checked={g.autoAnswer} disabled={s.layout !== 'glance'} onChange={(v) => patch({ glance: { autoAnswer: v } })} />
-        <Slider label="Time between automatic answers" hint="At least this long between two answers." range={GLANCE_COOLDOWN_RANGE}
-          value={g.cooldownS} fallback={PERSISTED_DEFAULTS.glance.cooldownS} format={(v) => `${v} s`} onChange={(v) => patch({ glance: { cooldownS: v } })} />
+        <Row as="label" label="Time between automatic answers"
+          hint={`At least this long between two answers.${g.cooldownS !== PERSISTED_DEFAULTS.glance.cooldownS ? ` Default: ${PERSISTED_DEFAULTS.glance.cooldownS} s.` : ''}`}>
+          <Range range={GLANCE_COOLDOWN_RANGE} value={g.cooldownS} onChange={(cooldownS) => patch({ glance: { cooldownS } })} />
+          <output className="num">{g.cooldownS} s</output>
+          <button className="reset" data-tip={`Reset to ${PERSISTED_DEFAULTS.glance.cooldownS} s`} aria-label="Reset Time between automatic answers"
+            disabled={g.cooldownS === PERSISTED_DEFAULTS.glance.cooldownS} onClick={(e) => (e.preventDefault(), patch({ glance: { cooldownS: PERSISTED_DEFAULTS.glance.cooldownS } }))}>↺</button>
+        </Row>
         <Toggle label="Invisible mode" checked={s.isInvisible} onChange={(v) => patch({ isInvisible: v })}
           hint="Hides Glint from screen sharing and recordings. It doesn't hide Glint's processes, permissions or audio capture from other software, and anyone looking at your screen can still see it." />
         <Toggle label="Keep focus in other apps while invisible" hint="Typing in Glint never steals focus from the shared window. The chat box can't be typed in while this is on."
@@ -231,17 +222,13 @@ function General({ s, onReleaseNotes }: { s: State; onReleaseNotes: () => void }
 
       <Section title="Opacity" aside={<button className="link" disabled={opacityDefault} onClick={() => patch({ opacity: OPACITY_DEFAULTS })}>Restore defaults</button>}>
         <div className="opacity-grid">
-          {(Object.keys(OPACITY_LABELS) as (keyof OpacitySettings)[]).map((k) => {
-            const [min, max, step] = OPACITY_RANGES[k]
-            return (
-              <Fragment key={k}>
-                <label htmlFor={`opacity-${k}`} data-tip={OPACITY_LABELS[k][1]}>{OPACITY_LABELS[k][0]}</label>
-                <input id={`opacity-${k}`} type="range" min={min} max={max} step={step} value={s.opacity[k]} style={fill(s.opacity[k], min, max)}
-                  onChange={(e) => patch({ opacity: { [k]: Number(e.target.value) } })} />
-                <output>{percent(s.opacity[k])}</output>
-              </Fragment>
-            )
-          })}
+          {(Object.keys(OPACITY_LABELS) as (keyof OpacitySettings)[]).map((k) => (
+            <Fragment key={k}>
+              <label htmlFor={`opacity-${k}`} data-tip={OPACITY_LABELS[k][1]}>{OPACITY_LABELS[k][0]}</label>
+              <Range id={`opacity-${k}`} range={OPACITY_RANGES[k]} value={s.opacity[k]} onChange={(v) => patch({ opacity: { [k]: v } })} />
+              <output>{percent(s.opacity[k])}</output>
+            </Fragment>
+          ))}
         </div>
       </Section>
 
@@ -375,25 +362,11 @@ function MicTest() {
   useEffect(() => {
     if (!on) return
     let cancelled = false
-    let raf = 0
-    let stream: MediaStream | undefined
-    let ctx: AudioContext | undefined
-    navigator.mediaDevices.getUserMedia({ audio: MIC_CONSTRAINTS }).then((st) => {
-      if (cancelled) return st.getTracks().forEach((t) => t.stop())
-      stream = st
-      setDevice(st.getAudioTracks()[0]?.label ?? '')
-      ctx = new AudioContext()
-      const analyser = ctx.createAnalyser()
-      ctx.createMediaStreamSource(st).connect(analyser)
-      const buf = new Float32Array(analyser.fftSize)
-      const tick = () => {
-        analyser.getFloatTimeDomainData(buf)
-        let peak = 0
-        for (const v of buf) peak = Math.max(peak, Math.abs(v))
-        setLevel(Math.sqrt(peak)) // sqrt: normal speech lands mid-meter instead of near the bottom
-        raf = requestAnimationFrame(tick)
-      }
-      tick()
+    let close: (() => void) | undefined
+    openMic((pcm) => !cancelled && setLevel(peak(pcm))).then((c) => {
+      if (cancelled) return c()
+      close = c
+      void defaultMic().then((d) => !cancelled && setDevice(d ?? ''))
     }, (err: Error) => {
       if (cancelled) return
       setError(err.message)
@@ -401,9 +374,7 @@ function MicTest() {
     })
     return () => {
       cancelled = true
-      cancelAnimationFrame(raf)
-      stream?.getTracks().forEach((t) => t.stop())
-      void ctx?.close()
+      close?.()
     }
   }, [on])
 
@@ -534,8 +505,7 @@ function Ai({ s }: { s: State }) {
     const tickedNext = new Set(keep)
     if (first !== ai.provider) tickedNext.add(ai.provider) // the old first stays in the chain, just lower
     tickedNext.delete(first)
-    // A CLI model name means nothing to the other CLI, or to an API.
-    setAi({ provider: first, fallbacks: next.slice(1).filter((p) => tickedNext.has(p)), ...(first !== ai.provider ? { cliModel: '', cliSmartModel: '' } : {}) })
+    setAi({ ...chooseFirst(ai, first), fallbacks: next.slice(1).filter((p) => tickedNext.has(p)) })
   }
   const move = (p: AiProvider, to: number) => {
     if (list[to] === p) return // dropped where it was
@@ -579,7 +549,7 @@ function Ai({ s }: { s: State }) {
                 {first ? <input type="checkbox" checked disabled aria-label={`${PROVIDER_LABELS[p]} answers first`} />
                   : <input type="checkbox" checked={on} aria-label={`Use ${PROVIDER_LABELS[p]} as a fallback`} onChange={(e) => tick(p, e.target.checked)} />}
                 <span className="pname">{PROVIDER_LABELS[p]}{(first || on) && <span className={`order ${first ? 'first' : ''}`}>{first ? 'answers first' : `fallback ${fallbackN}`}</span>}</span>
-                <ProviderStatus s={s} provider={p} />
+                {isCli(p) ? <CliStatus provider={p as 'claude-cli' | 'codex-cli'} /> : <KeyField provider={p as KeyProvider} status={s.aiKeys[p as KeyProvider]} />}
               </li>
             )
           })}
@@ -761,13 +731,6 @@ function HumanizerConnect({ s, onClose }: { s: State; onClose: () => void }) {
       </div>
     </form>
   )
-}
-
-/** A provider's key or sign-in, with what can be done about it. */
-function ProviderStatus({ s, provider }: { s: State; provider: AiProvider }) {
-  if (isCli(provider)) return <CliStatus provider={provider as 'claude-cli' | 'codex-cli'} />
-  const p = provider as KeyProvider
-  return <KeyField provider={p} status={s.aiKeys[p]} />
 }
 
 function KeyField({ provider, status }: { provider: KeyProvider; status: State['aiKeys'][KeyProvider] }) {
@@ -961,49 +924,44 @@ const TEMPLATE_GROUPS = [['interviewed', 'Being interviewed'], ['work', 'Work an
 function TemplateSheet({ onClose, onAdd }: { onClose: () => void; onAdd: (t: (typeof MODE_TEMPLATES)[number]) => void }) {
   const [query, setQuery] = useState('')
   const [pick, setPick] = useState<string | null>(null)
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !e.isComposing && onClose()
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  const ref = useRef<HTMLDialogElement>(null)
+  useLayoutEffect(() => ref.current?.showModal(), [])
   const q = query.trim().toLowerCase()
   const shown = MODE_TEMPLATES.filter((t) => !q || `${t.title} ${t.blurb}`.toLowerCase().includes(q))
   const chosen = MODE_TEMPLATES.find((t) => t.id === pick)
   return (
-    <div className="sheet-backdrop" onClick={onClose}>
-      <div className="sheet" role="dialog" aria-label="Start from a template" onClick={(e) => e.stopPropagation()}>
-        <header><b>Start from a template</b><span>You can edit everything afterwards</span></header>
-        <label className="sheet-search">
-          <Icon name="search" />
-          <input type="search" autoFocus placeholder={`Search ${MODE_TEMPLATES.length} templates`} aria-label="Search templates" value={query} onChange={(e) => setQuery(e.target.value)} />
-        </label>
-        <div className="sheet-body">
-          {TEMPLATE_GROUPS.map(([g, label]) => {
-            const ts = shown.filter((t) => t.group === g)
-            return ts.length > 0 && (
-              <section key={g}>
-                <h3>{label}</h3>
-                <div className="tgrid">
-                  {ts.map((t) => (
-                    <button key={t.id} className={`tcard ${pick === t.id ? 'on' : ''}`} onClick={() => setPick(t.id)} onDoubleClick={() => onAdd(t)}>
-                      <b>{t.title}</b><span>{t.blurb}</span>
-                    </button>
-                  ))}
-                </div>
-              </section>
-            )
-          })}
-          {!shown.length && <p className="muted sheet-empty">No template matches.</p>}
-        </div>
-        <footer>
-          <p>{chosen ? <><b>{chosen.title}:</b> tip for this one: {chosen.tip}</> : 'Pick a template to see a tip for it.'}</p>
-          <span className="sheet-buttons">
-            <button className="text" onClick={onClose}>Cancel</button>
-            <button className="primary" disabled={!chosen} onClick={() => chosen && onAdd(chosen)}>Add mode</button>
-          </span>
-        </footer>
+    <dialog ref={ref} className="sheet" aria-label="Start from a template" onClose={onClose} onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <header><b>Start from a template</b><span>You can edit everything afterwards</span></header>
+      <label className="sheet-search">
+        <Icon name="search" />
+        <input type="search" autoFocus placeholder={`Search ${MODE_TEMPLATES.length} templates`} aria-label="Search templates" value={query} onChange={(e) => setQuery(e.target.value)} />
+      </label>
+      <div className="sheet-body">
+        {TEMPLATE_GROUPS.map(([g, label]) => {
+          const ts = shown.filter((t) => t.group === g)
+          return ts.length > 0 && (
+            <section key={g}>
+              <h3>{label}</h3>
+              <div className="tgrid">
+                {ts.map((t) => (
+                  <button key={t.id} className={`tcard ${pick === t.id ? 'on' : ''}`} onClick={() => setPick(t.id)} onDoubleClick={() => onAdd(t)}>
+                    <b>{t.title}</b><span>{t.blurb}</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )
+        })}
+        {!shown.length && <p className="muted sheet-empty">No template matches.</p>}
       </div>
-    </div>
+      <footer>
+        <p>{chosen ? <><b>{chosen.title}:</b> tip for this one: {chosen.tip}</> : 'Pick a template to see a tip for it.'}</p>
+        <span className="sheet-buttons">
+          <button className="text" onClick={onClose}>Cancel</button>
+          <button className="primary" disabled={!chosen} onClick={() => chosen && onAdd(chosen)}>Add mode</button>
+        </span>
+      </footer>
+    </dialog>
   )
 }
 
@@ -1011,20 +969,13 @@ function TemplateSheet({ onClose, onAdd }: { onClose: () => void; onAdd: (t: (ty
 function ModeEditor({ mode, active, jobs }: { mode: Mode; active: boolean; jobs: State['modeFileJobs'] }) {
   const [draft, setDraft] = useState(mode)
   const saved = useRef(mode)
-  const latest = useRef(draft)
-  latest.current = draft
-  const save = () => {
-    const d = latest.current
+  useAutosave(draft, () => {
+    const d = draft
     if (d.name === saved.current.name && d.prompt === saved.current.prompt && d.screenshotNote === saved.current.screenshotNote) return
     saved.current = d
     // Main updates just this mode, and only if it still exists: a deleted mode can't come back.
     void glint.invoke('modes:update', { id: d.id, name: d.name, prompt: d.prompt, screenshotNote: d.screenshotNote ?? '' })
-  }
-  useEffect(() => {
-    const t = setTimeout(save, 600)
-    return () => clearTimeout(t)
-  }, [draft])
-  useEffect(() => save, [])
+  }, 600)
 
   return (
     <>
@@ -1559,7 +1510,7 @@ function Developer({ s }: { s: State }) {
 // About
 
 function About({ s }: { s: State }) {
-  const commit = typeof __GLINT_COMMIT__ === 'string' ? __GLINT_COMMIT__ : ''
+  const commit = __GLINT_COMMIT__
   const info = `Glint ${s.appVersion}${commit ? ` (${commit})` : ''} · ${s.systemInfo}`
   return (
     <>
@@ -1624,20 +1575,17 @@ function LiveLog() {
 }
 
 /** A Developer tuning row: label (its explanation on hover), a slider and the value. */
-function DevSlider({ label, hint, range: [min, max, step], value, format, onChange }: {
+function DevSlider({ label, hint, range, value, format, onChange }: {
   label: string; hint: string; range: [number, number, number]; value: number; format: (v: number) => string; onChange: (v: number) => void
 }) {
   return (
     <label className="dev-row">
       <span data-tip={hint}>{label}</span>
-      <input type="range" min={min} max={max} step={step} value={value} style={fill(value, min, max)} onChange={(e) => onChange(Number(e.target.value))} />
+      <Range range={range} value={value} onChange={onChange} />
       <output>{format(value)}</output>
     </label>
   )
 }
-
-/** A slider's filled part, for the track's gradient. */
-const fill = (v: number, min: number, max: number) => ({ '--fill': `${((v - min) / (max - min)) * 100}%` }) as CSSProperties
 
 /** Commands in `backticks` as monospace. */
 const withCode = (text: string) => text.split(/`([^`]+)`/).map((part, i) => (i % 2 ? <code key={i}>{part}</code> : part))

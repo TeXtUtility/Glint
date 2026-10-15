@@ -7,18 +7,17 @@ import type { GlassRect } from '../types'
 // the user was in. What actually blocks activation is a WindowServer tag that AppKit sets through the
 // private -[NSWindow _setPreventsActivation:]; we call it directly via the Objective-C runtime.
 
-type Fn = (...args: unknown[]) => any
-type Runtime = Record<'sel' | 'cls' | 'send' | 'sendBool' | 'responds' | 'performLater' | 'initRect' | 'setRect' | 'sendInt' | 'sendDouble' | 'sendObj' | 'sendStr' | 'addSub' | 'isTrue', Fn>
+type Runtime = ReturnType<typeof load>
 let rt: Runtime | null = null
+const runtime = () => (rt ??= load())
 
-function runtime() {
-  if (rt) return rt
+function load() {
   const objc = koffi.load('/usr/lib/libobjc.A.dylib')
   koffi.load('/System/Library/Frameworks/AppKit.framework/AppKit') // NSVisualEffectView, NSAppearance
   const NSRect = koffi.struct('NSRect', { x: 'double', y: 'double', w: 'double', h: 'double' })
   // Pointers travel as uint64 (same register on arm64/x64), avoiding koffi pointer wrappers. objc_msgSend takes each
   // method's own signature, so it's declared once per shape.
-  rt = {
+  return {
     sel: objc.func('sel_registerName', 'uint64_t', ['str']),
     cls: objc.func('objc_getClass', 'uint64_t', ['str']),
     send: objc.func('objc_msgSend', 'uint64_t', ['uint64_t', 'uint64_t']),
@@ -36,7 +35,6 @@ function runtime() {
     addSub: objc.func('objc_msgSend', 'void', ['uint64_t', 'uint64_t', 'uint64_t', 'int64_t', 'uint64_t']),
     isTrue: objc.func('objc_msgSend', 'bool', ['uint64_t', 'uint64_t']),
   }
-  return rt
 }
 
 function nsWindowOf(win: BrowserWindow) {

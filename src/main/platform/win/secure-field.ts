@@ -8,17 +8,16 @@ const OBJID_CLIENT = 0xfffffffc
 const IID_IACCESSIBLE = new Uint8Array([0xe0, 0x36, 0x87, 0x61, 0x3d, 0x3c, 0xcf, 0x11, 0x81, 0x0c, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71])
 const PTR = koffi.sizeof('void *')
 
-type Fn = (...args: any[]) => any
-type Proto = ReturnType<typeof koffi.proto>
-let native: Record<'fromEvent' | 'fromWindow' | 'coInit' | 'setHook' | 'unhook', Fn> & Record<'getState' | 'release' | 'eventProc', Proto> | null = null
-function lib() {
-  if (native) return native
+let native: ReturnType<typeof load> | null = null
+const lib = () => (native ??= load())
+
+function load() {
   const oleacc = koffi.load('oleacc.dll')
   const ole32 = koffi.load('ole32.dll')
   const user32 = koffi.load('user32.dll')
   koffi.struct('GlintVariant', { vt: 'uint16_t', r1: 'uint16_t', r2: 'uint16_t', r3: 'uint16_t', val: 'int32_t', pad: 'int32_t', more: 'int64_t' })
   const eventProc = koffi.proto('void GlintWinEvent(void *hook, uint32_t event, void *hwnd, int32_t obj, int32_t child, uint32_t thread, uint32_t time)')
-  return (native = {
+  return {
     fromEvent: oleacc.func('long AccessibleObjectFromEvent(void *hwnd, uint32_t id, uint32_t child, _Out_ void **acc, _Out_ GlintVariant *varChild)'),
     fromWindow: oleacc.func('long AccessibleObjectFromWindow(void *hwnd, uint32_t id, const uint8_t *riid, _Out_ void **acc)'),
     coInit: ole32.func('long CoInitializeEx(void *reserved, uint32_t mode)'),
@@ -28,7 +27,7 @@ function lib() {
     getState: koffi.proto('long GlintGetAccState(void *self, GlintVariant child, _Out_ GlintVariant *state)'),
     release: koffi.proto('uint32_t GlintRelease(void *self)'),
     eventProc,
-  })
+  }
 }
 
 const method = (obj: unknown, index: number) => koffi.decode(koffi.decode(obj, 'void *'), index * PTR, 'void *')

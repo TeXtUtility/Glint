@@ -6,19 +6,14 @@ import koffi from 'koffi'
 import { ControlDoubleTap } from '../../../shared/typing'
 import type { KeyInput } from '../types'
 
-type Fn = (...args: any[]) => any
-let native: {
-  tapCreate: Fn; tapEnable: Fn; getField: Fn; getFlags: Fn; getUnicode: Fn; preflight: Fn; request: Fn
-  createSource: Fn; mainLoop: Fn; addSource: Fn; removeSource: Fn; invalidate: Fn; release: Fn; commonModes: unknown
-  proto: ReturnType<typeof koffi.proto>
-} | null = null
+let native: ReturnType<typeof load> | null = null
+const lib = () => (native ??= load())
 
-function lib() {
-  if (native) return native
+function load() {
   const cg = koffi.load('/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics')
   const cf = koffi.load('/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation')
   const proto = koffi.proto('void *GlintTapCallback(void *proxy, uint32_t type, void *event, void *info)')
-  native = {
+  return {
     proto,
     tapCreate: cg.func('void *CGEventTapCreate(uint32_t tap, uint32_t place, uint32_t options, uint64_t mask, GlintTapCallback *cb, void *info)'),
     tapEnable: cg.func('void CGEventTapEnable(void *tap, bool enable)'),
@@ -35,7 +30,6 @@ function lib() {
     release: cf.func('void CFRelease(void *ref)'),
     commonModes: koffi.decode(cf.symbol('kCFRunLoopCommonModes', 'void *'), 'void *'),
   }
-  return native
 }
 
 const KEY_DOWN = 10

@@ -29,10 +29,10 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^5.2.0",
-    "electron": "^44.5.1",
+    "electron": "^44.7.2",
     "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
-    "katex": "^0.16.47",
+    "katex": "^0.19.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-markdown": "^10.1.0",
@@ -76,16 +76,11 @@
     ],
     "extraResources": [
       {
-        "from": "resources/silero_vad.onnx",
-        "to": "silero_vad.onnx"
-      },
-      {
-        "from": "resources/pyannote_segmentation_3.int8.onnx",
-        "to": "pyannote_segmentation_3.int8.onnx"
-      },
-      {
-        "from": "resources/pyannote_segmentation_3.LICENSE",
-        "to": "pyannote_segmentation_3.LICENSE"
+        "from": "resources",
+        "filter": [
+          "silero_vad.onnx",
+          "pyannote_segmentation_3.*"
+        ]
       }
     ],
     "asar": true,
@@ -138,5 +133,8 @@
         "!node_modules/audiotee/bin/**"
       ]
     }
+  },
+  "overrides": {
+    "katex": "$katex"
   }
 }

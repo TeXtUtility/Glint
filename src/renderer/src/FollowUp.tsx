@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react'
-import { isChatId, ownerName, renamed, sessionPeople, type ActionItem, type SavedSession, type SessionSummary } from '../../shared/history'
+import { isChatId, ownerName, renamed, sessionPeople, titleOf, type ActionItem, type SavedSession, type SessionSummary } from '../../shared/history'
 import { type State } from '../../shared/state'
-import { byDay, DatePill, dayLabel, dueLabel, minutes, OwnerPill, SavedChat, SavedTranscript, time, TrashRow, useDraftStream } from './Dashboard'
+import { byDay, DatePill, dayLabel, dueLabel, minutes, notesLine, OwnerPill, SavedChat, SavedTranscript, time, TrashRow, useFollowUp } from './Dashboard'
 import { glint, useAppState } from './glint'
 import { Icon } from './icons'
 import { Markdown } from './Markdown'
-import { Segmented } from './ui'
+import { Segmented, useFlash } from './ui'
 
 type Tab = 'followup' | 'chat' | 'transcript'
 type GroupBy = 'owner' | 'date'
+type FollowUpState = ReturnType<typeof useFollowUp>
 
 /** 3c: a session's follow-up in its own window, with every session in a sidebar. */
 export function FollowUpWindow() {
@@ -43,7 +44,7 @@ export function FollowUpWindow() {
             {rows.map((r) => (
               <div key={r.id} className="history-item">
                 <button className={`fw-row ${r.id === current ? 'on' : ''}`} onClick={() => setId(r.id)}>
-                  <span className="fw-row-title">{r.title || (isChatId(r.id) ? 'Untitled chat' : 'Untitled session')}</span>
+                  <span className="fw-row-title">{titleOf(r)}</span>
                   <span className="fw-row-meta">{rowMeta(r, s.session?.id === r.id)}</span>
                 </button>
                 {s.session?.id !== r.id && <TrashRow r={r} onError={(m) => setError(`Couldn't move it to the Trash: ${m}`)} />}
@@ -87,7 +88,7 @@ function Session({ id, s }: { id: string; s: State }) {
     <>
       <header className="fw-head">
         <div className="fw-head-text">
-          <h1>{r.title || (isChat ? 'Untitled chat' : 'Untitled session')}</h1>
+          <h1>{titleOf(r)}</h1>
           <p>{meta}</p>
         </div>
         {!isChat && (
@@ -109,8 +110,8 @@ function Session({ id, s }: { id: string; s: State }) {
 }
 
 function FollowUpBody({ r, live, onError }: { r: SavedSession; live: boolean; onError: (m: string) => void }) {
-  const [items, setItems] = useState<ActionItem[]>(r.actions ?? [])
-  useEffect(() => setItems(r.actions ?? []), [r.actions])
+  const f = useFollowUp(r, onError)
+  const { items } = f
   const [groupBy, setGroupBy] = useState<GroupBy>('owner')
   const [dragging, setDragging] = useState<string | null>(null)
   const [over, setOver] = useState<string | null>(null)
@@ -119,9 +120,7 @@ function FollowUpBody({ r, live, onError }: { r: SavedSession; live: boolean; on
   // A ticked task stays where it is for a moment, struck through, before it moves to Done.
   const [settling, setSettling] = useState<Set<string>>(new Set())
   const change = (itemId: string, fields: Partial<ActionItem>) => {
-    const next = items.map((a) => (a.id === itemId ? { ...a, ...fields } : a))
-    setItems(next)
-    glint.invoke('sessions:actions', r.id, next).catch((err: Error) => onError(err.message))
+    f.change(itemId, fields)
     const settle = (on: boolean) => setSettling((s) => (on ? s.add(itemId) : s.delete(itemId), new Set(s)))
     if ('done' in fields) settle(!!fields.done)
     if (fields.done) setTimeout(() => settle(false), 800)
@@ -144,16 +143,11 @@ function FollowUpBody({ r, live, onError }: { r: SavedSession; live: boolean; on
     <div className="fw-body">
       <div className="fw-left">
         {r.summary ? <div className="fw-summary"><Markdown text={renamed(r.summary, r)} /></div>
-          : <p className="fw-muted">{live ? 'Notes are written when the session ends.' : r.notesStatus === 'processing' ? 'Writing notes…' : 'No notes yet.'}</p>}
+          : <p className="fw-muted">{notesLine(r, live)}</p>}
         <div className="fw-actions-head">
           <h3>Action items</h3>
-          <div className="segmented fw-seg" role="radiogroup" aria-label="Group action items">
-            {(['owner', 'date'] as const).map((g) => (
-              <button key={g} role="radio" aria-checked={groupBy === g} className={groupBy === g ? 'on' : ''} onClick={() => setGroupBy(g)}>
-                {g === 'owner' ? 'By owner' : 'By date'}
-              </button>
-            ))}
-          </div>
+          <Segmented className="fw-seg" label="Group action items" value={groupBy} onChange={setGroupBy}
+            options={[{ value: 'owner', label: 'By owner' }, { value: 'date', label: 'By date' }]} />
         </div>
         {!items.length && <p className="fw-muted">No action items.</p>}
         {groups.map((g) => (
@@ -179,7 +173,7 @@ function FollowUpBody({ r, live, onError }: { r: SavedSession; live: boolean; on
                   <input type="checkbox" checked={ticked(a)} aria-label={`Done: ${a.text}`} onChange={(e) => change(a.id, { done: e.target.checked || undefined })} />
                   <span className="fw-text"><span className="strike">{a.text}</span>{a.done && ownerName(a, r) && <span className="suffix"> · {a.ownerId === 'me' ? 'You' : ownerName(a, r)}</span>}</span>
                   {a.done ? <span className="fw-plain-date">{a.due ? dueLabel(a.due) : ''}</span>
-                    : groupBy === 'owner' ? <DatePill item={a} meetingAt={r.startedAt} onChange={(f) => change(a.id, f)} />
+                    : groupBy === 'owner' ? <DatePill item={a} onChange={(f) => change(a.id, f)} />
                     : <OwnerPill item={a} r={r} onChange={(f) => change(a.id, f)} onError={onError} />}
                 </li>
               ))}
@@ -193,8 +187,8 @@ function FollowUpBody({ r, live, onError }: { r: SavedSession; live: boolean; on
         )}
       </div>
       <div className="fw-right">
-        <CalendarCard r={r} items={items} onError={onError} />
-        <EmailCard r={r} onError={onError} />
+        <CalendarCard f={f} />
+        <EmailCard f={f} />
       </div>
     </div>
   )
@@ -250,48 +244,36 @@ function byDate(items: ActionItem[]): Group[] {
   return list
 }
 
-function CalendarCard({ r, items, onError }: { r: SavedSession; items: ActionItem[]; onError: (m: string) => void }) {
-  const [added, setAdded] = useState(false)
-  const dated = items.filter((a) => a.due && !a.done)
+function CalendarCard({ f }: { f: FollowUpState }) {
+  const dated = f.items.filter((a) => a.due && !a.done)
   const weekday = (d: string) => new Date(`${d}T12:00`).toLocaleDateString(undefined, { weekday: 'short' })
   const explain = dated.length
     ? `${dated.slice(0, 3).map((a) => (a.time ? `${weekday(a.due!)} is 30 min at ${a.time}` : `${weekday(a.due!)} is all-day`)).join('; ')}. Adding again updates the same events.`
     : 'Give a task a date to put it in your calendar.'
-  const add = () =>
-    glint.invoke('sessions:calendar', r.id).then(() => (setAdded(true), setTimeout(() => setAdded(false), 2000)), (err: Error) => onError(err.message))
   return (
     <div className="fw-card cal">
       <b><Icon name="calendar" /><span key={dated.length} className="tick">{dated.length}</span>{dated.length === 1 ? ' item has a date' : ' items have dates'}</b>
       <p>{explain}</p>
-      <button className="fw-cal-btn" disabled={!dated.length} onClick={add}>{added ? 'Added' : 'Add to Calendar'}</button>
+      <button className="fw-cal-btn" disabled={!dated.length} onClick={f.addToCalendar}>{f.added ? 'Added' : 'Add to Calendar'}</button>
     </div>
   )
 }
 
-function EmailCard({ r, onError }: { r: SavedSession; onError: (m: string) => void }) {
-  const [draft, setDraft] = useState(r.followUp ?? null)
-  useEffect(() => setDraft(r.followUp ?? null), [r.followUp])
-  const [drafting, setDrafting] = useState(false)
-  const streaming = useDraftStream(r.id, drafting, setDraft)
-  const [copied, setCopied] = useState(false)
-  const write = () => {
-    setDrafting(true)
-    glint.invoke<{ subject: string; body: string }>('sessions:follow-up', r.id).then(setDraft, (err: Error) => onError(err.message)).finally(() => setDrafting(false))
-  }
-  const subject = draft && renamed(draft.subject, r)
-  const body = draft && renamed(draft.body, r)
+function EmailCard({ f }: { f: FollowUpState }) {
+  const { email, drafting, streaming, write } = f
+  const [copied, flashCopied] = useFlash(1500)
   return (
     <div className="fw-card email">
       <b>
         Follow-up email
-        {draft && <button className="fw-redraft" aria-label="Redraft" data-tip="Write the email again from these notes" disabled={drafting} onClick={write}><Icon name="refresh" /></button>}
+        {email && <button className="fw-redraft" aria-label="Redraft" data-tip="Write the email again from these notes" disabled={drafting} onClick={write}><Icon name="refresh" /></button>}
       </b>
-      {draft ? (
+      {email ? (
         <>
-          <div className={`fw-email-body ${drafting && !streaming ? 'redrafting' : ''}`}><p className="subject">{subject}</p>{body}</div>
+          <div className={`fw-email-body ${drafting && !streaming ? 'redrafting' : ''}`}><p className="subject">{email.subject}</p>{email.body}</div>
           <div className="fw-email-buttons">
-            <button onClick={() => (glint.send('app:copy', body), setCopied(true), setTimeout(() => setCopied(false), 1500))}>{copied ? 'Copied' : 'Copy'}</button>
-            <button className="mail" onClick={() => window.open(`mailto:?subject=${encodeURIComponent(subject!)}&body=${encodeURIComponent(body!)}`)}>Open in Mail</button>
+            <button onClick={() => (glint.send('app:copy', email.body), flashCopied())}>{copied ? 'Copied' : 'Copy'}</button>
+            <button className="mail" onClick={f.openMail}>Open in Mail</button>
           </div>
         </>
       ) : (

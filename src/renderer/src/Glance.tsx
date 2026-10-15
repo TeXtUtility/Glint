@@ -1,7 +1,7 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { plainLine } from '../../shared/markdown'
 import type { State } from '../../shared/state'
-import { glint, opacityStyle } from './glint'
+import { opacityStyle, useGlanceSize } from './glint'
 import { Icon } from './icons'
 import { Markdown } from './Markdown'
 import { DashedEdge } from './ui'
@@ -37,21 +37,8 @@ export function Glance({ s, cue, error, onOpen, children }: {
     return () => timers.forEach(clearTimeout)
   }, [cue?.id, cue?.done])
 
-  // Main sizes the window to exactly this content.
-  useLayoutEffect(() => {
-    const el = ref.current
-    if (!el) return
-    const send = () => {
-      const r = el.getBoundingClientRect()
-      // Only the strip's own text animates the window; the hover card and Reduce Motion snap it.
-      const animate = !el.querySelector('.glance-card') && !matchMedia('(prefers-reduced-motion: reduce)').matches
-      glint.send('window:glance-size', { w: Math.ceil(r.width), h: Math.ceil(r.height), animate })
-    }
-    send()
-    const ro = new ResizeObserver(send)
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
+  // Only the strip's own text animates the window; the hover card and Reduce Motion snap it.
+  useGlanceSize(ref, (el) => !el.querySelector('.glance-card') && !matchMedia('(prefers-reduced-motion: reduce)').matches)
 
   const age = cue ? Date.now() - cue.at : Infinity
   const line = cue ? plainLine(cue.text) : ''

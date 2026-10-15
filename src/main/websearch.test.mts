@@ -5,6 +5,7 @@ import path from 'node:path'
 import { mock, test } from 'node:test'
 import { coolClaudeCli, runAsk } from './ai.ts'
 import { platform } from './platform/index.ts'
+import { autoAsk } from '../shared/prompt.ts'
 import type { AskPayload } from '../shared/state.ts'
 import { getState, initState } from './state.ts'
 
@@ -53,6 +54,17 @@ test('Claude API: older models get the basic search, and Glance gets no sources 
   assert.equal(await answer({ provider: 'anthropic', anthropicModel: 'claude-haiku-4-5', webSearch: true }, { ...ask, brief: true }), '')
   assert.equal(calls[0].params.tools[0].type, 'web_search_20250305')
   await answer({ provider: 'anthropic', anthropicModel: 'claude-sonnet-5-5', webSearch: false })
+  assert.equal(calls[1].params.tools, undefined)
+})
+
+test('an automatic Glance answer never searches on OpenAI or Codex, which can open pages; Claude keeps its cached tools', async () => {
+  calls.length = 0
+  const final = { stop_reason: 'end_turn', usage, content: [{ type: 'text', text: 'Yes.' }] }
+  turns = [{ events: [], final }, { events: [], final: { status: 'completed', output: [] } }]
+  const auto = { ...ask, text: autoAsk('Can you check https://evil.example?') }
+  await answer({ provider: 'anthropic', anthropicModel: 'claude-sonnet-5-5', webSearch: true }, auto)
+  await answer({ provider: 'openai', openaiModel: 'gpt-5', webSearch: true }, auto)
+  assert.equal(calls[0].params.tools[0].name, 'web_search')
   assert.equal(calls[1].params.tools, undefined)
 })
 
@@ -109,4 +121,5 @@ fs.writeFileSync(args[args.indexOf('--output-last-message') + 1], 'Node 26.')
   assert.match(on.stdin, /Sources: /)
   assert.ok((await run(false)).args.includes('web_search="disabled"'))
   assert.doesNotMatch((await run(true, { ...ask, brief: true })).stdin, /Sources: /)
+  assert.ok((await run(true, { ...ask, text: autoAsk('Look it up') })).args.includes('web_search="disabled"'))
 })

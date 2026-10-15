@@ -3,16 +3,18 @@
 // Voiceprints and voice samples live in one file encrypted with safeStorage, like session history.
 // Voices heard in a session but never named exist only in memory.
 import { app, net, safeStorage } from 'electron'
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { Worker } from 'node:worker_threads'
-import { EMBED_MAX_S, fillSpeaker, MeVoice, refill, SpeakerTracker, speakerCuts, unit, type LineVoice, type Person, type Source } from '../shared/speakers'
+import { cleanName, EMBED_MAX_S, fillSpeaker, MeVoice, refill, SpeakerTracker, speakerCuts, unit, type LineVoice, type Person, type Source } from '../shared/speakers'
 import type { TranscriptItem } from '../shared/state'
+import { fromPcm16, toPcm16 } from './audio-core'
 import { getState, patchState } from './state'
 import { verbose } from './log'
+import { downloadVerified } from './stt'
 import createVoiceWorker from './voice-worker?nodeWorker'
-import { stopWorker } from './worker'
+import { loadWorker, stopWorker, type Ask } from './worker'
 
 const MODEL = {
   id: 'titanet-small',
@@ -43,12 +45,10 @@ const SEGMENTATION_PATH = path.join(app.isPackaged ? process.resourcesPath : pat
 const storePath = () => path.join(app.getPath('userData'), 'people.glint')
 
 /** Runs the embedding and split models (voice-worker.ts) while loaded; ended after a session to free them. */
-let worker: Worker | null = null
+let worker: { w: Worker; ask: Ask } | null = null
 let loading: Promise<void> | null = null
 /** Bumps on every unload, so a load that finishes after one ends its worker instead of keeping it. */
 let generation = 0
-const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>()
-let nextId = 0
 let store: Store = { version: 1, model: MODEL.id, me: null, people: [] }
 /** The store file exists but can't be decrypted; never overwrite it without the user choosing to. */
 let unreadable = false
@@ -61,29 +61,19 @@ export function loadVoiceModel(): Promise<void> {
   return (loading ??= (async () => {
     if (!fs.existsSync(modelPath())) await download()
     const w = createVoiceWorker()
-    await new Promise<void>((resolve, reject) => {
-      w.on('message', (m: { t: string; id?: number; value?: unknown; message?: string }) => {
-        if (m.t === 'ready') return resolve()
-        const p = m.id === undefined ? undefined : pending.get(m.id)
-        if (m.id !== undefined) pending.delete(m.id)
-        if (m.t === 'result') p?.resolve(m.value)
-        else if (m.t === 'error') (p ? p.reject(new Error(m.message)) : reject(new Error(m.message)))
-      })
-      w.on('error', reject)
-      w.on('exit', () => {
-        for (const p of pending.values()) p.reject(new Error('the voice model was unloaded'))
-        pending.clear()
-        reject(new Error('the voice model stopped'))
-      })
-      w.postMessage({ t: 'load', model: modelPath(), segmentation: SEGMENTATION_PATH })
+    w.on('exit', () => {
+      if (worker?.w !== w) return
+      worker = null
+      loading = null
+      patchState({ voiceModel: 'failed' })
     })
+    const ask = await loadWorker(w, { t: 'load', model: modelPath(), segmentation: SEGMENTATION_PATH }, 'voice model')
     if (gen !== generation) {
-      // The session ended while it loaded: nothing would unload it. Its exit mustn't fail a newer worker's asks.
-      w.removeAllListeners('exit')
+      // The session ended while it loaded: nothing would unload it.
       stopWorker(w)
       throw new Error('the voice model was unloaded')
     }
-    worker = w
+    worker = { w, ask }
     verbose('[voice] voice model loaded')
     patchState({ voiceModel: 'ready' })
   })().catch((err: Error) => {
@@ -98,17 +88,9 @@ export function loadVoiceModel(): Promise<void> {
 /** Frees the voice models (their worker ends); the next session or voice recording loads them again. */
 export function unloadVoiceModel() {
   generation++
-  if (worker) stopWorker(worker)
+  if (worker) stopWorker(worker.w)
   worker = null
   loading = null
-}
-
-function ask<T>(t: 'embed' | 'split', samples: Float32Array): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const id = nextId++
-    pending.set(id, { resolve: resolve as (v: unknown) => void, reject })
-    worker!.postMessage({ t, id, samples })
-  })
 }
 
 async function download() {
@@ -116,21 +98,17 @@ async function download() {
   fs.mkdirSync(path.dirname(modelPath()), { recursive: true })
   // no-store: Chromium's HTTP cache would keep a second copy of the model. The timeout means a stall can't hang enrolling.
   const res = await net.fetch(MODEL.url, { cache: 'no-store', signal: AbortSignal.timeout(10 * 60_000) })
-  if (!res.ok || !res.body) throw new Error(`voice model download failed (HTTP ${res.status})`)
-  const total = Number(res.headers.get('content-length')) || 0
-  const chunks: Buffer[] = []
-  let got = 0
+  const part = `${modelPath()}.part`
   let shown = -1
-  for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
-    chunks.push(Buffer.from(chunk))
-    got += chunk.byteLength
-    const pct = total ? Math.floor((got / total) * 20) * 5 : -1
-    if (pct !== shown) patchState({ voiceModelPct: (shown = pct) < 0 ? null : pct })
+  try {
+    await downloadVerified(res, 'voice model', MODEL.sha256, part, (pct) => {
+      const step = Math.floor(pct / 5) * 5
+      if (step !== shown) patchState({ voiceModelPct: (shown = step) })
+    })
+    fs.renameSync(part, modelPath())
+  } finally {
+    fs.rmSync(part, { force: true })
   }
-  const data = Buffer.concat(chunks) // 40 MB; fine to hold while hashing
-  if (createHash('sha256').update(data).digest('hex') !== MODEL.sha256) throw new Error('the voice model download was corrupted')
-  fs.writeFileSync(`${modelPath()}.part`, data)
-  fs.renameSync(`${modelPath()}.part`, modelPath())
 }
 
 /** Unit-length voice embedding of the middle of `audio`; null until the model is loaded. */
@@ -138,7 +116,7 @@ export async function embed(audio: Float32Array): Promise<number[] | null> {
   if (!worker) return null
   const n = EMBED_MAX_S * SR
   const from = Math.max(0, (audio.length - n) >> 1)
-  return unit(await ask<number[]>('embed', audio.slice(from, from + n)))
+  return unit(await worker.ask<number[]>('embed', { samples: audio.slice(from, from + n) }))
 }
 
 /**
@@ -148,7 +126,7 @@ export async function embed(audio: Float32Array): Promise<number[] | null> {
  */
 export async function speakerChanges(audio: Float32Array): Promise<number[]> {
   if (!worker) return []
-  return speakerCuts(await ask<Parameters<typeof speakerCuts>[0]>('split', audio)).map((s) => Math.round(s * SR))
+  return speakerCuts(await worker.ask<Parameters<typeof speakerCuts>[0]>('split', { samples: audio })).map((s) => Math.round(s * SR))
 }
 
 // The store
@@ -182,17 +160,10 @@ function save(reset = false) {
   if (!safeStorage.isEncryptionAvailable()) throw new Error('secure storage unavailable')
   if (unreadable && !reset) throw new Error("Saved voices can't be read. Record your voice again in Settings → Voice first.")
   const tmp = `${storePath()}.tmp`
-  fs.writeFileSync(tmp, safeStorage.encryptString(JSON.stringify(store)), { mode: 0o600 })
+  fs.writeFileSync(tmp, safeStorage.encryptString(JSON.stringify(store)), { mode: 0o600, flush: true })
   fs.renameSync(tmp, storePath())
   unreadable = false
   publish()
-}
-
-const toPcm16 = (a: Float32Array) => Buffer.from(Int16Array.from(a, (x) => Math.round(Math.max(-1, Math.min(1, x)) * 0x7fff)).buffer)
-const cleanName = (name: unknown) => {
-  const n = String(name ?? '').trim().replace(/\s+/g, ' ').slice(0, 40)
-  if (!n) throw new Error('Type a name first.')
-  return n
 }
 
 // The user's voiceprint
@@ -200,8 +171,7 @@ const cleanName = (name: unknown) => {
 /** Averages 3 s windows of a recording. Rejects it if the windows disagree: two voices, or mostly noise. */
 export async function enrollMe(pcm16: Uint8Array): Promise<void> {
   await loadVoiceModel()
-  const s16 = new Int16Array(pcm16.buffer.slice(pcm16.byteOffset, pcm16.byteOffset + (pcm16.byteLength & ~1)))
-  const audio = Float32Array.from(s16, (x) => x / 0x8000)
+  const audio = fromPcm16(pcm16)
   const w = ENROLL_WINDOW_S * SR
   const vecs: number[][] = []
   for (let i = 0; i + w <= audio.length; i += w) {

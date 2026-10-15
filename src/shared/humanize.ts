@@ -41,12 +41,8 @@ export function humanizes(h: { service: HumanizerService | 'none'; on: boolean; 
 export const words = (text: string) => text.split(/\s+/).filter(Boolean).length
 
 /** Below this, the service refuses the text. */
-export function minimum(service: HumanizerService): { words?: number; chars?: number } {
-  if (service === 'emulate') return { words: 40 }
-  if (service === 'writehuman') return { chars: 30 }
-  if (service === 'undetectable') return { chars: 50 }
-  return {}
-}
+const MINIMUM: Partial<Record<HumanizerService, { words?: number; chars?: number }>> = { emulate: { words: 40 }, writehuman: { chars: 30 }, undetectable: { chars: 50 } }
+export const minimum = (service: HumanizerService) => MINIMUM[service] ?? {}
 export function tooShort(service: HumanizerService, text: string): boolean {
   const m = minimum(service)
   return (m.words !== undefined && words(text) < m.words) || (m.chars !== undefined && text.trim().length < m.chars)

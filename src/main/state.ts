@@ -79,6 +79,7 @@ export function flushState() {
     fs.renameSync(tmp, file())
   } catch (err) {
     console.error('[state] write failed:', err)
+    writeTimer = setTimeout(flushState, 5_000)
   }
 }
 

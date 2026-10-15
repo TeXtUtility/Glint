@@ -41,6 +41,12 @@ export function providerOrder(ai: { provider: AiProvider; fallbacks: AiProvider[
   return [ai.provider, ...ai.fallbacks].filter((p, i, all) => all.indexOf(p) === i)
 }
 
+// The old first stays in the chain, just lower, and a CLI model name means nothing to the other CLI, or to an API.
+export function chooseFirst(ai: AiSettings, p: AiProvider): Partial<AiSettings> {
+  if (p === ai.provider) return {}
+  return { provider: p, fallbacks: [ai.provider, ...ai.fallbacks.filter((f) => f !== p && f !== ai.provider)], cliModel: '', cliSmartModel: '' }
+}
+
 /** One line for the UI: what failed, and who answered instead (or that nobody did). */
 export function failureSummary(failures: Failure[], answeredBy: AiProvider | null): string {
   const what = failures.map((f) => `${PROVIDER_LABELS[f.provider]} ${f.error.startsWith('timed out') ? '' : 'failed: '}${f.error}`).join(' · ')
@@ -85,9 +91,7 @@ export async function tryInOrder(
     if (i > 0 && opts.usable && !opts.usable(provider)) continue
     if (failures.length) opts.onSwitch?.([...failures], provider)
     const ctrl = new AbortController()
-    const stop = () => ctrl.abort()
-    opts.signal?.addEventListener('abort', stop)
-    if (opts.signal?.aborted) ctrl.abort()
+    const signal = opts.signal ? AbortSignal.any([ctrl.signal, opts.signal]) : ctrl.signal
     const ms = opts.firstTextMs?.(provider)
     let slow = false
     let lastSign = Date.now()
@@ -103,7 +107,7 @@ export async function tryInOrder(
       await attempt(provider, () => {
         started = true
         clearTimeout(timer)
-      }, ctrl.signal, () => (lastSign = Date.now()))
+      }, signal, () => (lastSign = Date.now()))
       if (slow) throw new Error('stalled') // an attempt may end quietly when stopped
       return { provider, failures }
     } catch (err) {
@@ -111,7 +115,6 @@ export async function tryInOrder(
       if (started || opts.isFinal?.(err)) break
     } finally {
       clearTimeout(timer)
-      opts.signal?.removeEventListener('abort', stop)
     }
   }
   throw new AllFailedError(failures)

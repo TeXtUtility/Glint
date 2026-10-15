@@ -5,7 +5,7 @@ import {
   isSystemShortcut, nativeAccelerator, prettyAccelerator, RUNTIME_DEFAULTS, tidyDividers, toAccelerator, type State,
 } from './state.ts'
 
-const base = (): State => ({ ...RUNTIME_DEFAULTS, ...PERSISTED_DEFAULTS, platform: 'darwin' })
+const base = (): State => ({ ...RUNTIME_DEFAULTS, ...PERSISTED_DEFAULTS })
 const inApp = (): State => ({ ...base(), onboardingDone: true, permissions: { mic: 'granted', screen: 'granted' } })
 const session = { id: 's', chatId: 'c', language: 'en', transcript: [], startedAt: 0, isResumed: false, priorElapsedMs: 0 }
 
@@ -13,7 +13,7 @@ test('phase needs onboarding + permissions', () => {
   assert.equal(phase(base()), 'onboarding')
   assert.equal(phase(inApp()), 'app')
   assert.equal(phase({ ...inApp(), permissions: { mic: 'granted', screen: 'denied' } }), 'onboarding')
-  assert.equal(phase({ ...inApp(), platform: 'win32', permissions: { mic: 'denied', screen: 'granted' } }), 'onboarding') // as on a Mac
+  assert.equal(phase({ ...inApp(), permissions: { mic: 'denied', screen: 'granted' } }), 'onboarding')
 })
 
 test('normalize clears app fields outside the app phase', () => {

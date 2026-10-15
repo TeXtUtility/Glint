@@ -21,10 +21,12 @@ export const terminals = (): TerminalApp[] => (Object.keys(WIN_APPS) as (keyof t
 /** PowerShell's version of the wrapper: the same review and y/N, then the commands dot-sourced into this session. */
 export function psWrapper(commandsFile: string, commands: string, cleanup?: string): string {
   const q = (s: string) => `'${s.replace(/'/g, "''")}'`
+  const lines = commands.split('\n').length
   return [
     "Write-Host ''; Write-Host 'Glint wants to run:' -ForegroundColor White; Write-Host ''",
     `Write-Host ${q(commands)}`,
     "Write-Host ''; Write-Host 'Check these before you press y: commands can change or delete files, and AI can get them wrong.' -ForegroundColor Red",
+    ...(lines > 20 ? [`Write-Host '(${lines} lines; scroll up to read all of it)' -ForegroundColor White`] : []),
     "Write-Host -NoNewline 'Run it? [y/N] '",
     "$__glint = if ([Console]::IsInputRedirected) { [Console]::In.ReadLine() } else { [string]$Host.UI.RawUI.ReadKey('IncludeKeyDown').Character }",
     'if ($__glint -match \'^[yY]\') {',

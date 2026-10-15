@@ -15,8 +15,6 @@ export const APP_ORIGIN = DEV_URL ? originOf(DEV_URL) : 'app://glint'
 const routeUrl = (route: string, query = '') => `${DEV_URL ?? 'app://glint/index.html'}#/${route}${query}`
 
 const CHAT_W = 646 // 640 of panel, plus the 3 px either side the page keeps for its failure ring
-/** The capsule and panel pages each keep 3 px round their surface, which already makes the 6 px gap between them. */
-const GAP = 0
 /**
  * The capsule's window, sized by its page to what it shows: `flow` is the capsule plus the new-voice tray, which the
  * panel sits under; `h` also covers an open popover, which may overlap the panel's top.
@@ -176,7 +174,7 @@ export function updateWindows(s: State) {
     for (const w of BrowserWindow.getAllWindows()) w.setContentProtection(protect)
   }
 
-  if (focusLocked(s)) (blurChat(), blurOverlay('controlBar'))
+  if (focusLocked(s)) (blurOverlay('chat'), blurOverlay('controlBar'))
   place()
   const glance = inCorner(s)
   watchHover(inApp && s.overlayVisible) // Glance's hover card and every overlay tooltip need it
@@ -188,7 +186,7 @@ export function updateWindows(s: State) {
   }
   if (wins.chat) {
     const show = s.overlayVisible && (glance || s.chat.visible) && loaded
-    if (!show) blurChat()
+    if (!show) blurOverlay('chat')
     setShown(wins.chat, show)
     // Ghost sits above the menu bar, as the Ghost app's strip does (screen-saver level), so it can be dragged over it.
     const level = s.layout === 'ghost' ? 'screen-saver' : 'modal-panel'
@@ -216,13 +214,11 @@ export function focusOverlay(name: 'chat' | 'controlBar'): boolean {
   platform.window.takeFocus(win)
   return true
 }
-export const focusChat = () => focusOverlay('chat')
 
 export function blurOverlay(name: 'chat' | 'controlBar') {
   const win = wins[name]
   if (win) platform.window.dropFocus(win)
 }
-export const blurChat = () => blurOverlay('chat')
 
 /** The capsule's centre x and top y. */
 let pos: { x: number; y: number } | null = null
@@ -345,19 +341,19 @@ function place() {
   pos ??= defaultPos()
   const wa = displayAt(pos).workArea
   const cw = Math.min(CHAT_W, wa.width - 32)
-  const ch = Math.min(chatHeight(s), wa.height - bar.flow - GAP)
+  const ch = Math.min(chatHeight(s), wa.height - bar.flow)
   if (!tracking) {
     const half = Math.max(bar.w, cw) / 2
     const cx = clamp(pos.x, wa.x + half, wa.x + wa.width - half)
     let y = clamp(pos.y, wa.y, wa.y + wa.height - bar.flow)
     const limit = wa.y + wa.height - 150
-    if (s.chat.visible && y + bar.flow + GAP + ch > limit) y = Math.max(wa.y, limit - bar.flow - GAP - ch)
+    if (s.chat.visible && y + bar.flow + ch > limit) y = Math.max(wa.y, limit - bar.flow - ch)
     pos = { x: Math.round(cx), y }
   }
   // The capsule stays centred on pos.x as it grows and shrinks with its state. Near a screen edge its window's empty
   // room may hang off the screen.
   setBoundsIfChanged(wins.controlBar, { x: Math.round(pos.x - barWinW() / 2), y: pos.y, width: barWinW(), height: bar.h })
-  setChatBounds({ x: Math.round(pos.x - cw / 2), y: pos.y + bar.flow + GAP, width: cw, height: ch }, !s.chat.expanded)
+  setChatBounds({ x: Math.round(pos.x - cw / 2), y: pos.y + bar.flow, width: cw, height: ch }, !s.chat.expanded)
 }
 
 /** How long a shorter collapsed panel keeps its window's height: the page's frames reach the screen about 50 ms late. */
@@ -479,7 +475,7 @@ export function startResize() {
   // Capped at the room on screen: a height past it wouldn't show, and dragging back up would do nothing at first.
   const room = () => {
     const p = pos ?? defaultPos()
-    return displayAt(p).workArea.height - bar.flow - GAP
+    return displayAt(p).workArea.height - bar.flow
   }
   const from = Math.min(chatH, room())
   track((_dx, dy) => {
@@ -507,31 +503,27 @@ export function onDisplaysChanged() {
   displayTimer = setTimeout(place, 50)
 }
 
+function openPanel(name: 'followup' | 'settings', channel: string, key: string, arg: string | undefined, height: number) {
+  const existing = wins[name]
+  if (existing) {
+    if (arg) existing.webContents.send(channel, arg)
+    bringToFront(existing)
+    return null
+  }
+  const w = create(name, { width: 920, height, minWidth: 760, minHeight: 480, ...platform.window.chrome(name) }, arg ? `?${key}=${arg}` : '')
+  w.once('ready-to-show', () => bringToFront(w))
+  return w
+}
+
 /** The Follow-up window, on session `id` (or the newest). */
 export function openFollowUp(id?: unknown) {
-  const sid = typeof id === 'string' && /^[\w-]+$/.test(id) ? id : undefined
   patchState({ notesReady: null })
-  const existing = wins.followup
-  if (existing) {
-    if (sid) existing.webContents.send('followup:open', sid)
-    bringToFront(existing)
-    return
-  }
-  const w = create('followup', { width: 920, height: 640, minWidth: 760, minHeight: 480, ...platform.window.chrome('followup') }, sid ? `?id=${sid}` : '')
-  w.once('ready-to-show', () => bringToFront(w))
+  openPanel('followup', 'followup:open', 'id', typeof id === 'string' && /^[\w-]+$/.test(id) ? id : undefined, 640)
 }
 
 /** `page` is optional; callers like menu clicks pass other arguments, so anything but a page name is ignored. */
 export function openSettings(page?: unknown) {
-  const p = typeof page === 'string' && /^[a-z]+$/.test(page) ? page : undefined
-  const existing = wins.settings
-  if (existing) {
-    if (p) existing.webContents.send('settings:page', p)
-    bringToFront(existing)
-    return
-  }
-  const w = create('settings', { width: 920, height: 670, minWidth: 760, minHeight: 480, ...platform.window.chrome('settings') }, p ? `?page=${p}` : '')
-  w.once('ready-to-show', () => bringToFront(w))
+  const w = openPanel('settings', 'settings:page', 'page', typeof page === 'string' && /^[a-z]+$/.test(page) ? page : undefined, 670)
   // Closing mid-recording skips the page's cleanup; without this every global hotkey stays off until relaunch.
-  w.on('closed', () => patchState({ isRecordingShortcut: false }))
+  w?.on('closed', () => patchState({ isRecordingShortcut: false }))
 }

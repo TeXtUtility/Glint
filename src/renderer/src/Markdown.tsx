@@ -8,6 +8,7 @@ import remarkMath from 'remark-math'
 import { normalizeMath, scrub } from '../../shared/markdown'
 import { glint, isMac } from './glint'
 import { Icon } from './icons'
+import { useFlash } from './ui'
 
 // No raw HTML is rendered (react-markdown's default), so model output can't inject markup.
 // Each render re-parses the whole reply (see streamEvery); an unclosed fence just renders as an open code block.
@@ -23,11 +24,10 @@ const SHELL = new Set(['bash', 'sh', 'zsh', 'shell', 'console', 'terminal', 'she
 
 /** Copy with a check that says Copied for a moment. `text` is read on click, from what's on screen. */
 function CopyButton({ text, tip }: { text: () => string; tip: string }) {
-  const [copied, setCopied] = useState(false)
+  const [copied, flash] = useFlash(1500)
   const copy = () => {
     glint.send('app:copy', text())
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1500)
+    flash()
   }
   return (
     <button className={`code-copy ${copied ? 'done' : ''}`} data-tip={tip} onClick={copy}>

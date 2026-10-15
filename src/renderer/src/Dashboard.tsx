@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import {
-  isChatId, lineLabel, ownerName, renamed, sessionPeople, transcriptText, type ActionItem, type SavedSession, type SessionSummary,
+  isChatId, lineLabel, ownerName, renamed, sessionPeople, titleOf, transcriptText, type ActionItem, type SavedSession, type SessionSummary,
 } from '../../shared/history'
 import { elapsedMs, formatElapsed, type State } from '../../shared/state'
 import { glint, isMac, useTick } from './glint'
 import { Icon } from './icons'
 import { Markdown } from './Markdown'
-import { ConfirmButton, Presence, Segmented } from './ui'
+import { ConfirmButton, Presence, Segmented, useDismiss, useFlash } from './ui'
 
 // The overlay only takes key focus on request, so text fields ask main for it before the click lands. Other windows
 // focus normally.
@@ -15,27 +15,22 @@ const wantFocus = () => void (document.documentElement.dataset.route === 'chat' 
 export const minutes = (ms: number) => (ms < 60_000 ? '<1 min' : `${Math.round(ms / 60_000)} min`)
 export const time = (ms: number) => new Date(ms).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
 
-export function dayLabel(ms: number) {
-  const d = new Date(ms)
-  const today = new Date()
-  const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1)
-  if (d.toDateString() === today.toDateString()) return 'Today'
-  if (d.toDateString() === yesterday.toDateString()) return 'Yesterday'
-  return d.toLocaleDateString(undefined, {
-    weekday: 'short', month: 'short', day: 'numeric', year: d.getFullYear() === today.getFullYear() ? undefined : 'numeric',
-  })
-}
+const dayStart = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
 
-/** An action item's YYYY-MM-DD as "Today", "Tomorrow" or "Fri 2 Oct". */
-export function dueLabel(due: string) {
-  const [y, m, d] = due.split('-').map(Number)
-  const date = new Date(y, m - 1, d)
+function relDay(date: Date) {
   const today = new Date()
-  const days = Math.round((date.getTime() - new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime()) / 86_400_000)
-  if (days === 0) return 'Today'
-  if (days === 1) return 'Tomorrow'
+  const days = Math.round((dayStart(date) - dayStart(today)) / 86_400_000)
+  if (Math.abs(days) <= 1) {
+    const word = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' }).format(days, 'day')
+    return word[0].toLocaleUpperCase() + word.slice(1)
+  }
   return date.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: date.getFullYear() === today.getFullYear() ? undefined : 'numeric' })
 }
+
+export const dayLabel = (ms: number) => relDay(new Date(ms))
+
+/** An action item's YYYY-MM-DD as "Today", "Tomorrow" or "Fri 2 Oct". */
+export const dueLabel = (due: string) => relDay(fromIso(due)!)
 
 /** Sessions whose title, summary or a tag matches the search, grouped by day in the order listed. History and the Follow-up window. */
 export function byDay(list: SessionSummary[], query: string) {
@@ -52,7 +47,7 @@ export function byDay(list: SessionSummary[], query: string) {
 
 /** A History row's Move to Trash (hold), over its right end while the row is pointed at. Not on the live session. */
 export function TrashRow({ r, onError }: { r: SessionSummary; onError: (message: string) => void }) {
-  const name = r.title || (isChatId(r.id) ? 'Untitled chat' : 'Untitled session')
+  const name = titleOf(r)
   return (
     <ConfirmButton icon={<Icon name="trash" size={14} />} label={`Move "${name}" to Trash`} confirmLabel="Move to Trash"
       onConfirm={() => void glint.invoke('sessions:trash', r.id).catch((err: Error) => onError(err.message))} />
@@ -120,7 +115,7 @@ export function Dashboard({ s, openId, setOpenId, onContinue }: {
               <div key={r.id} className="history-item">
                 <button className="session-row" onClick={() => setOpenId(r.id)}>
                   <span className="session-main">
-                    <span className="session-title">{r.title || (isChatId(r.id) ? 'Untitled chat' : 'Untitled session')}</span>
+                    <span className="session-title">{titleOf(r)}</span>
                     <span className="session-meta">
                       {time(r.startedAt)} · {isChatId(r.id) ? 'Chat' : s.session?.id === r.id ? `${formatElapsed(elapsedMs(s, Date.now()))} so far` : minutes(r.elapsedMs)}
                       {!!r.tags?.length && <span className="tags">{r.tags.map((t) => <span key={t}>{t}</span>)}</span>}
@@ -156,13 +151,7 @@ function SessionDetail({ id, s, onBack, onContinue }: { id: string; s: State; on
     glint.invoke<SavedSession | null>('session:load', id).then((v) => (v ? setR(v) : onBack()), (err: Error) => setError(err.message))
   }, [id, s.historyVersion])
 
-  // The panel never has key focus, so Esc can't close the ⋯ menu; any click outside does.
-  useEffect(() => {
-    if (!more) return
-    const onDown = (e: PointerEvent) => !moreRef.current?.contains(e.target as Node) && setMore(false)
-    window.addEventListener('pointerdown', onDown)
-    return () => window.removeEventListener('pointerdown', onDown)
-  }, [more])
+  useDismiss(more, moreRef, () => setMore(false))
 
   const save = (fields: { title?: string; summary?: string }) =>
     glint.invoke('sessions:update', id, fields).catch((err: Error) => setError(err.message))
@@ -297,45 +286,44 @@ export function SavedTranscript({ r }: { r: SavedSession }) {
   )
 }
 
-/** While a redraft streams, its words replace the old draft as they arrive. */
-export function useDraftStream(id: string, drafting: boolean, show: (d: { subject: string; body: string }) => void) {
-  const [streaming, setStreaming] = useState(false)
-  useEffect(() => {
-    if (!drafting) return setStreaming(false)
-    return glint.on('sessions:follow-up-partial', (d: { id: string; subject: string; body: string }) => d.id === id && (setStreaming(true), show(d)))
-  }, [drafting, id])
-  return streaming
-}
-
-/** The meeting's to-dos, then what to do next: put the dated ones in a calendar, or draft the follow-up email. */
-function FollowUp({ r, onError }: { r: SavedSession; onError: (message: string) => void }) {
+export function useFollowUp(r: SavedSession, onError: (message: string) => void) {
   // Local copies, so a tick shows at once; a refetch after the save brings the same back.
   const [items, setItems] = useState<ActionItem[]>(r.actions ?? [])
   useEffect(() => setItems(r.actions ?? []), [r.actions])
   const [draft, setDraft] = useState(r.followUp ?? null)
   useEffect(() => setDraft(r.followUp ?? null), [r.followUp])
   const [drafting, setDrafting] = useState(false)
-  const streaming = useDraftStream(r.id, drafting, setDraft)
-  const [added, setAdded] = useState(false)
-
-  const change = (id: string, fields: Partial<ActionItem>) => {
-    const next = items.map((a) => (a.id === id ? { ...a, ...fields } : a))
-    setItems(next)
-    glint.invoke('sessions:actions', r.id, next).catch((err: Error) => onError(err.message))
+  // While a redraft streams, its words replace the old draft as they arrive.
+  const [streaming, setStreaming] = useState(false)
+  useEffect(() => {
+    if (!drafting) return setStreaming(false)
+    return glint.on('sessions:follow-up-partial', (d: { id: string; subject: string; body: string }) => d.id === r.id && (setStreaming(true), setDraft(d)))
+  }, [drafting, r.id])
+  const [added, flashAdded] = useFlash(2000)
+  const email = draft && { subject: renamed(draft.subject, r), body: renamed(draft.body, r) }
+  return {
+    items, email, drafting, streaming, added,
+    change(id: string, fields: Partial<ActionItem>) {
+      const next = items.map((a) => (a.id === id ? { ...a, ...fields } : a))
+      setItems(next)
+      glint.invoke('sessions:actions', r.id, next).catch((err: Error) => onError(err.message))
+    },
+    write() {
+      setDrafting(true)
+      glint.invoke<{ subject: string; body: string }>('sessions:follow-up', r.id)
+        .then(setDraft, (err: Error) => onError(err.message))
+        .finally(() => setDrafting(false))
+    },
+    addToCalendar: () => void glint.invoke('sessions:calendar', r.id).then(() => flashAdded(), (err: Error) => onError(err.message)),
+    openMail: () => email && window.open(`mailto:?subject=${encodeURIComponent(email.subject)}&body=${encodeURIComponent(email.body)}`),
   }
+}
+
+/** The meeting's to-dos, then what to do next: put the dated ones in a calendar, or draft the follow-up email. */
+function FollowUp({ r, onError }: { r: SavedSession; onError: (message: string) => void }) {
+  const { items, email, drafting, streaming, added, change, write, addToCalendar, openMail } = useFollowUp(r, onError)
   const open = items.filter((a) => !a.done).length
   const dated = items.filter((a) => a.due && !a.done).length
-  const addToCalendar = () =>
-    glint.invoke<number>('sessions:calendar', r.id).then(
-      () => (setAdded(true), setTimeout(() => setAdded(false), 2000)),
-      (err: Error) => onError(err.message),
-    )
-  const draftEmail = () => {
-    setDrafting(true)
-    glint.invoke<{ subject: string; body: string }>('sessions:follow-up', r.id)
-      .then(setDraft, (err: Error) => onError(err.message))
-      .finally(() => setDrafting(false))
-  }
 
   return (
     <>
@@ -353,7 +341,7 @@ function FollowUp({ r, onError }: { r: SavedSession; onError: (message: string) 
               <input type="checkbox" checked={!!a.done} aria-label={`Done: ${a.text}`} onChange={(e) => change(a.id, { done: e.target.checked || undefined })} />
               <span className="action-text"><span className="strike">{a.text}</span></span>
               <OwnerPill item={a} r={r} onChange={(fields) => change(a.id, fields)} onError={onError} />
-              <DatePill item={a} meetingAt={r.startedAt} onChange={(fields) => change(a.id, fields)} />
+              <DatePill item={a} onChange={(fields) => change(a.id, fields)} />
             </li>
           ))}
         </ul>
@@ -364,27 +352,26 @@ function FollowUp({ r, onError }: { r: SavedSession; onError: (message: string) 
       <div className="email-card">
         <div className="section-head">
           <h3><Icon name="mail" />Follow-up email</h3>
-          {draft ? (
+          {email ? (
             <span className="inline">
-              <button className="chip plain" disabled={drafting} onClick={draftEmail} data-tip="Write the email again from these notes">
+              <button className="chip plain" disabled={drafting} onClick={write} data-tip="Write the email again from these notes">
                 <Icon name="refresh" size={12} />{drafting ? 'Drafting…' : 'Redraft'}
               </button>
-              <button className="chip copy" data-tip="Copy the email text" onClick={() => glint.send('app:copy', renamed(draft.body, r))}><Icon name="copy" size={12} />Copy</button>
-              <button className="chip primary" data-tip="Open a new email with this subject and text in your mail app"
-                onClick={() => window.open(`mailto:?subject=${encodeURIComponent(renamed(draft.subject, r))}&body=${encodeURIComponent(renamed(draft.body, r))}`)}>
+              <button className="chip copy" data-tip="Copy the email text" onClick={() => glint.send('app:copy', email.body)}><Icon name="copy" size={12} />Copy</button>
+              <button className="chip primary" data-tip="Open a new email with this subject and text in your mail app" onClick={openMail}>
                 Open in Mail
               </button>
             </span>
           ) : (
-            <button className="chip" disabled={drafting} onClick={draftEmail} data-tip="Have your AI write the follow-up email from these notes">
+            <button className="chip" disabled={drafting} onClick={write} data-tip="Have your AI write the follow-up email from these notes">
               {drafting ? 'Drafting…' : 'Draft email'}
             </button>
           )}
         </div>
-        {draft && (
+        {email && (
           <div className={`email-body ${drafting && !streaming ? 'redrafting' : ''}`}>
-            <p className="email-subject"><span className="muted">Subject</span> {renamed(draft.subject, r)}</p>
-            <div className="follow-up-body">{renamed(draft.body, r)}</div>
+            <p className="email-subject"><span className="muted">Subject</span> {email.subject}</p>
+            <div className="follow-up-body">{email.body}</div>
           </div>
         )}
       </div>
@@ -392,19 +379,13 @@ function FollowUp({ r, onError }: { r: SavedSession; onError: (message: string) 
   )
 }
 
-/** An item's date as a pill; clicking opens a picker with quick picks, the date the meeting said, a month and a time. */
-export function DatePill({ item, meetingAt, onChange }: {
-  item: ActionItem; meetingAt: number; onChange: (fields: Pick<ActionItem, 'due' | 'time'>) => void
+/** An item's date as a pill; clicking opens a picker with quick picks, the date the meeting said, a date and a time. */
+export function DatePill({ item, onChange }: {
+  item: ActionItem; onChange: (fields: Pick<ActionItem, 'due' | 'time'>) => void
 }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLSpanElement>(null)
-  // The panel never has key focus, so Esc can't close this; any click outside does.
-  useEffect(() => {
-    if (!open) return
-    const onDown = (e: PointerEvent) => !ref.current?.contains(e.target as Node) && setOpen(false)
-    window.addEventListener('pointerdown', onDown)
-    return () => window.removeEventListener('pointerdown', onDown)
-  }, [open])
+  useDismiss(open, ref, () => setOpen(false))
   return (
     <span className="date-pill" ref={ref}>
       <button className={`pill-sm date lead ${item.due ? '' : 'blank'}`} aria-expanded={open} data-tip={open ? undefined : 'When this is due'}
@@ -412,7 +393,7 @@ export function DatePill({ item, meetingAt, onChange }: {
         <Icon name={!item.due ? 'plus' : item.time ? 'clock' : 'calendar'} size={12} />
         {item.due ? `${dueLabel(item.due)}${item.time ? `, ${item.time}` : ''}` : 'Date'}
       </button>
-      <Presence open={open}>{(closing) => <DatePicker item={item} meetingAt={meetingAt} closing={closing} onChange={onChange} onClose={() => setOpen(false)} />}</Presence>
+      <Presence open={open}>{(closing) => <DatePicker item={item} closing={closing} onChange={onChange} onClose={() => setOpen(false)} />}</Presence>
     </span>
   )
 }
@@ -422,24 +403,15 @@ const isoDay = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d
 const fromIso = (s?: string) => (s ? new Date(Number(s.slice(0, 4)), Number(s.slice(5, 7)) - 1, Number(s.slice(8, 10))) : null)
 const shortDay = (s: string) => fromIso(s)!.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })
 
-function DatePicker({ item, meetingAt, closing, onChange, onClose }: {
-  item: ActionItem; meetingAt: number; closing: boolean; onChange: (fields: Pick<ActionItem, 'due' | 'time'>) => void; onClose: () => void
+function DatePicker({ item, closing, onChange, onClose }: {
+  item: ActionItem; closing: boolean; onChange: (fields: Pick<ActionItem, 'due' | 'time'>) => void; onClose: () => void
 }) {
   const sg = item.suggested
-  const opensOn = fromIso(item.due) ?? fromIso(sg?.due) ?? new Date(meetingAt)
-  const [month, setMonth] = useState(new Date(opensOn.getFullYear(), opensOn.getMonth(), 1))
   const [timed, setTimed] = useState(!!item.time)
   const now = new Date()
   const today = isoDay(now)
   const tomorrow = isoDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1))
-  const meetingDay = isoDay(new Date(meetingAt))
   const pick = (due: string, time = timed ? item.time : undefined) => onChange({ due, time })
-
-  // Monday first, whole weeks.
-  const lead = (month.getDay() + 6) % 7
-  const inMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate()
-  const cells = Array.from({ length: Math.ceil((lead + inMonth) / 7) * 7 }, (_, i) => new Date(month.getFullYear(), month.getMonth(), i - lead + 1))
-  const step = (n: number) => setMonth(new Date(month.getFullYear(), month.getMonth() + n, 1))
 
   return (
     <div className={`date-pop ${closing ? 'closing' : ''}`} role="dialog" aria-label={`Date for: ${item.text}`}>
@@ -451,31 +423,14 @@ function DatePicker({ item, meetingAt, closing, onChange, onClose }: {
             <Icon name="logo" size={13} />{shortDay(sg.due)}{sg.time && ` ${sg.time}`}, "{sg.said}"
           </button>
         )}
-      </div>
-      <div className="month-head">
-        <b>{month.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</b>
-        <span className="grow" />
-        <button className="icon-btn" aria-label="Previous month" onClick={() => step(-1)}><span className="flip"><Icon name="chevron" size={18} /></span></button>
-        <button className="icon-btn" aria-label="Next month" onClick={() => step(1)}><span className="turn"><Icon name="chevron" size={18} /></span></button>
-      </div>
-      <div className="month-grid" role="grid">
-        {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => <span key={i} className="wd">{d}</span>)}
-        {cells.map((d) => {
-          const iso = isoDay(d)
-          return (
-            <button key={iso} className={`${d.getMonth() !== month.getMonth() ? 'other' : ''} ${iso === item.due ? 'on' : ''} ${iso === meetingDay ? 'meeting' : ''}`}
-              data-tip={iso === meetingDay ? 'The day of the meeting' : undefined} onClick={() => pick(iso)}>
-              {d.getDate()}
-            </button>
-          )
-        })}
+        <input type="date" className="time-field" aria-label="Date" value={item.due ?? ''} onMouseDown={wantFocus}
+          onChange={(e) => e.target.value && pick(e.target.value)} />
       </div>
       <div className="time-row">
         <span>Time</span>
-        <div className="segmented mini" role="radiogroup" aria-label="Time">
-          <button role="radio" aria-checked={!timed} className={timed ? '' : 'on'} onClick={() => (setTimed(false), item.time && onChange({ due: item.due, time: undefined }))}>All day</button>
-          <button role="radio" aria-checked={timed} className={timed ? 'on' : ''} onClick={() => setTimed(true)}>At a time</button>
-        </div>
+        <Segmented className="mini" label="Time" value={timed ? 'timed' : 'allDay'}
+          onChange={(v) => (v === 'timed' ? setTimed(true) : (setTimed(false), item.time && onChange({ due: item.due, time: undefined })))}
+          options={[{ value: 'allDay', label: 'All day' }, { value: 'timed', label: 'At a time' }]} />
       </div>
       {timed && (
         <input type="time" className="time-field" aria-label="Time" value={item.time ?? ''} onMouseDown={wantFocus}
@@ -504,13 +459,7 @@ export function OwnerPill({ item, r, onChange, onError }: {
   const guessed = !!name && !item.ownerByUser
   const renamable = !!item.ownerId && item.ownerId !== 'me' && !!r.speakers?.[item.ownerId]
 
-  // The panel never has key focus, so Esc can't close this; any click outside does.
-  useEffect(() => {
-    if (!open) return
-    const onDown = (e: PointerEvent) => !ref.current?.contains(e.target as Node) && (setOpen(false), setTyped(null))
-    window.addEventListener('pointerdown', onDown)
-    return () => window.removeEventListener('pointerdown', onDown)
-  }, [open])
+  useDismiss(open, ref, () => (setOpen(false), setTyped(null)))
 
   const assign = (fields: Partial<ActionItem>) => {
     onChange({ owner: undefined, ownerId: undefined, ...fields, ownerByUser: true })
@@ -566,7 +515,7 @@ export function OwnerPill({ item, r, onChange, onError }: {
   )
 }
 
-function notesLine(r: SavedSession, live: boolean) {
+export function notesLine(r: SavedSession, live: boolean) {
   if (live) return 'Notes are written when the session ends.'
   if (r.notesStatus === 'processing') return 'Writing notes…'
   if (r.notesStatus === 'failed') return `Couldn't write notes: ${r.notesError ?? 'unknown error'}.`

@@ -4,17 +4,16 @@
 import * as ort from 'onnxruntime-node'
 import { VAD_DEFAULTS as VAD, type VadSettings } from '../shared/state.ts'
 
-export { VAD }
-
 export const SAMPLE_RATE = 16_000
 export const FRAME = 512 // Silero v5 frame at 16 kHz
 export const FRAME_MS = (FRAME / SAMPLE_RATE) * 1000 // 32 ms
 
-export function s16ToF32(s16: Int16Array): Float32Array {
-  const out = new Float32Array(s16.length)
-  for (let i = 0; i < s16.length; i++) out[i] = s16[i] / 0x8000
-  return out
+export function fromPcm16(bytes: Uint8Array): Float32Array {
+  const s16 = new Int16Array(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + (bytes.byteLength & ~1))) // copy: Node buffers can be unaligned
+  return Float32Array.from(s16, (x) => x / 0x8000)
 }
+
+export const toPcm16 = (a: Float32Array) => Buffer.from(Int16Array.from(a, (x) => Math.round(Math.max(-1, Math.min(1, x)) * 0x7fff)).buffer)
 
 /**
  * Speech models sometimes loop on short clips ("Right. right. right"). Collapses a phrase of 2+ words repeated back to
@@ -45,8 +44,7 @@ export function collapseRepeats(text: string): string {
 }
 
 export function encodeWav(audio: Float32Array): Buffer {
-  const data = Buffer.alloc(audio.length * 2)
-  for (let i = 0; i < audio.length; i++) data.writeInt16LE(Math.round(Math.max(-1, Math.min(1, audio[i])) * 0x7fff), i * 2)
+  const data = toPcm16(audio)
   const h = Buffer.alloc(44)
   h.write('RIFF', 0)
   h.writeUInt32LE(36 + data.length, 4)
@@ -214,9 +212,6 @@ export class RoleStream {
   constructor(vad: VadStream) {
     this.vad = vad
   }
-  get speaking() {
-    return this.seg.speaking
-  }
 
   /** `endTime` is the wall-clock ms at the end of `samples` (their arrival time). */
   async push(samples: Float32Array, endTime: number): Promise<SegEvent[]> {
@@ -233,10 +228,6 @@ export class RoleStream {
     }
     this.buf = all.slice(i)
     return events
-  }
-
-  flush() {
-    return this.seg.flush()
   }
 
   reset() {
