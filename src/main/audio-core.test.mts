@@ -5,7 +5,8 @@ import os from 'node:os'
 import path from 'node:path'
 import { test } from 'node:test'
 import * as ort from 'onnxruntime-node'
-import { BLOCKED_CALL_S, encodeWav, FRAME, FRAME_MS, RoleStream, s16ToF32, Segmenter, SilentCall, VAD, VadStream, type SegEvent, collapseRepeats } from './audio-core.ts'
+import { VAD_DEFAULTS as VAD } from '../shared/state.ts'
+import { BLOCKED_CALL_S, encodeWav, FRAME, FRAME_MS, fromPcm16, RoleStream, Segmenter, SilentCall, VadStream, type SegEvent, collapseRepeats } from './audio-core.ts'
 
 const frame = () => new Float32Array(FRAME)
 function run(seg: Segmenter, probs: number[]): SegEvent[] {
@@ -47,7 +48,7 @@ test('encodeWav writes a valid 16 kHz mono PCM16 header', () => {
   assert.equal(wav.readUInt32LE(24), 16000)
   assert.equal(wav.readUInt32LE(40), 6)
   assert.equal(wav.readInt16LE(46), Math.round(0.5 * 0x7fff))
-  assert.equal(s16ToF32(new Int16Array([-32768]))[0], -1)
+  assert.equal(fromPcm16(new Uint8Array(new Int16Array([-32768]).buffer))[0], -1)
 })
 
 test('silero finds speech in synthesized audio and not in silence', { skip: process.platform !== 'darwin' }, async (ctx) => {
@@ -61,7 +62,7 @@ test('silero finds speech in synthesized audio and not in silence', { skip: proc
   }
   const wav = fs.readFileSync(path.join(dir, 's.wav'))
   const dataAt = wav.indexOf('data') + 8
-  const speech = s16ToF32(new Int16Array(wav.buffer.slice(wav.byteOffset + dataAt, wav.byteOffset + wav.length - ((wav.length - dataAt) % 2))))
+  const speech = fromPcm16(wav.subarray(dataAt))
   fs.rmSync(dir, { recursive: true })
   // GitHub's Mac runners sometimes synthesize silence; that's no test of the VAD.
   if (!speech.some((x) => Math.abs(x) > 0.01)) return ctx.skip('speech synthesis gave silence on this Mac')

@@ -1,8 +1,8 @@
 import { desktopCapturer, screen } from 'electron'
+import { setTimeout as sleep } from 'node:timers/promises'
 import { patchState } from './state'
 import { getWin } from './windows'
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 let inflight: Promise<string | null> | null = null
 
 /** PNG data URL of the display holding the chat panel. Overlays are content-protected while capturing. */

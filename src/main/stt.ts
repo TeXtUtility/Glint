@@ -14,7 +14,7 @@ import { collapseRepeats, encodeWav } from './audio-core.ts' // extension lets p
 import createParakeet from './parakeet-worker?nodeWorker'
 import createWhisper from './whisper-worker?nodeWorker'
 import { TAR } from './platform/system'
-import { stopWorker } from './worker'
+import { loadWorker, stopWorker } from './worker'
 
 /** Transcribes one line of 16 kHz mono speech. */
 type Transcriber = (audio: Float32Array, language: string) => Promise<string>
@@ -73,35 +73,11 @@ async function inWorker(create: () => Worker, load: object, gen: number, onProgr
   if (gen !== generation) throw new Error('the speech model was unloaded')
   const w = create()
   worker = w
-  const pending = new Map<number, { resolve: (text: string) => void; reject: (err: Error) => void }>()
-  const settle = (id: number, fn: (p: { resolve: (text: string) => void; reject: (err: Error) => void }) => void) => {
-    const p = pending.get(id)
-    pending.delete(id)
-    if (p) fn(p)
-  }
-  await new Promise<void>((resolve, reject) => {
-    w.on('message', (m: { t: string; id?: number; text?: string; message?: string; pct?: number }) => {
-      if (m.t === 'ready') resolve()
-      else if (m.t === 'progress') onProgress?.(m.pct ?? 0)
-      else if (m.t === 'text') settle(m.id!, (p) => p.resolve(m.text ?? ''))
-      else if (m.t === 'error' && m.id === undefined) reject(new Error(m.message))
-      else if (m.t === 'error') settle(m.id!, (p) => p.reject(new Error(m.message)))
-    })
-    w.on('error', reject)
-    w.on('exit', () => {
-      for (const p of pending.values()) p.reject(new Error('the speech model was unloaded'))
-      pending.clear()
-      if (worker === w) unloadLocalAsr() // it crashed: the next line loads it again instead of waiting on it
-      reject(new Error('the speech model stopped'))
-    })
-    w.postMessage(load)
+  w.on('exit', () => {
+    if (worker === w) unloadLocalAsr() // it crashed: the next line loads it again instead of waiting on it
   })
-  let next = 0
-  return (audio, language) => new Promise((resolve, reject) => {
-    const id = next++
-    pending.set(id, { resolve, reject })
-    w.postMessage({ t: 'decode', id, samples: audio, language })
-  })
+  const ask = await loadWorker(w, load, 'speech model', onProgress)
+  return (audio, language) => ask<string>('decode', { samples: audio, language })
 }
 
 /** Frees the speech model's memory (its worker ends); the next session loads it again in a second or two. */
@@ -127,13 +103,26 @@ async function downloadSherpa(name: string, into: string, onProgress?: (pct: num
   fs.mkdirSync(into, { recursive: true })
   const archive = path.join(into, `${name}.tar.bz2.part`)
   const unpacked = path.join(into, `${name}.part`) // moved into place once whole, so a half-unpacked model never looks done
-  const out = fs.createWriteStream(archive)
   try {
     const res = await fetch(SHERPA_URL(name), { signal: AbortSignal.timeout(30 * 60_000) })
-    if (!res.ok || !res.body) throw new Error(`speech model download failed (HTTP ${res.status})`)
-    const total = Number(res.headers.get('content-length')) || 0
-    const hash = createHash('sha256') // as it streams, rather than reading 460 MB back
-    let got = 0
+    await downloadVerified(res, 'speech model', SHERPA_SHA256[name], archive, onProgress)
+    fs.mkdirSync(unpacked, { recursive: true })
+    await run(TAR, ['-xjf', archive, '-C', unpacked])
+    fs.rmSync(path.join(into, name), { recursive: true, force: true })
+    fs.renameSync(path.join(unpacked, name), path.join(into, name))
+  } finally {
+    fs.rmSync(unpacked, { recursive: true, force: true })
+    fs.rmSync(archive, { force: true })
+  }
+}
+
+export async function downloadVerified(res: Response, what: string, sha256: string, file: string, onProgress?: (pct: number) => void) {
+  if (!res.ok || !res.body) throw new Error(`${what} download failed (HTTP ${res.status})`)
+  const total = Number(res.headers.get('content-length')) || 0
+  const hash = createHash('sha256') // as it streams, rather than reading 460 MB back
+  const out = fs.createWriteStream(file)
+  let got = 0
+  try {
     // Rejects on any failure, a full disk included, rather than waiting on a write that never finishes.
     await pipeline(
       Readable.fromWeb(res.body as ReadableStream<Uint8Array>),
@@ -147,22 +136,12 @@ async function downloadSherpa(name: string, into: string, onProgress?: (pct: num
       },
       out,
     )
-    if (hash.digest('hex') !== SHERPA_SHA256[name]) throw new Error('the speech model download was corrupted')
-    fs.mkdirSync(unpacked, { recursive: true })
-    await run(TAR, ['-xjf', archive, '-C', unpacked])
-    fs.rmSync(path.join(into, name), { recursive: true, force: true })
-    fs.renameSync(path.join(unpacked, name), path.join(into, name))
   } finally {
     // A failed download can leave the file still opening; removed only once it's closed, or it would be created after.
     out.destroy()
     if (!out.closed) await new Promise<void>((resolve) => out.once('close', resolve))
-    fs.rmSync(unpacked, { recursive: true, force: true })
-    fs.rmSync(archive, { force: true })
   }
-}
-
-export async function transcribeLocal(audio: Float32Array, size: LocalWhisper, language: string, cacheDir: string) {
-  return (await loadLocalAsr(language, size, cacheDir))(audio, language)
+  if (hash.digest('hex') !== sha256) throw new Error(`the ${what} download was corrupted`)
 }
 
 export async function transcribeOpenAi(audio: Float32Array, model: string, language: string, apiKey?: string) {

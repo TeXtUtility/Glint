@@ -12,7 +12,6 @@ import { fetchSherpaModel } from './stt'
 
 type Role = 'me' | 'them'
 export const LIVE_WORDS_MODEL = 'sherpa-onnx-nemotron-speech-streaming-en-0.6b-560ms-int8-2026-04-25'
-const MODEL = LIVE_WORDS_MODEL
 
 let worker: Worker | null = null
 let ready: Promise<void> | null = null
@@ -38,8 +37,8 @@ export const LIVE_WORDS_MB = 442
 
 /** Downloads the model if it isn't here yet, without loading it (setup). */
 export async function downloadLiveWords(modelsDir: string, onProgress?: (pct: number) => void): Promise<string> {
-  const dir = path.join(modelsDir, 'asr', MODEL)
-  await fetchSherpaModel(MODEL, path.dirname(dir), onProgress)
+  const dir = path.join(modelsDir, 'asr', LIVE_WORDS_MODEL)
+  await fetchSherpaModel(LIVE_WORDS_MODEL, path.dirname(dir), onProgress)
   return dir
 }
 
