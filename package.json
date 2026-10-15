@@ -76,16 +76,11 @@
     ],
     "extraResources": [
       {
-        "from": "resources/silero_vad.onnx",
-        "to": "silero_vad.onnx"
-      },
-      {
-        "from": "resources/pyannote_segmentation_3.int8.onnx",
-        "to": "pyannote_segmentation_3.int8.onnx"
-      },
-      {
-        "from": "resources/pyannote_segmentation_3.LICENSE",
-        "to": "pyannote_segmentation_3.LICENSE"
+        "from": "resources",
+        "filter": [
+          "silero_vad.onnx",
+          "pyannote_segmentation_3.*"
+        ]
       }
     ],
     "asar": true,

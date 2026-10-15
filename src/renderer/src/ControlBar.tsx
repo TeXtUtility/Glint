@@ -1,15 +1,15 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { HUMANIZER_LABELS } from '../../shared/humanize'
-import { PROVIDER_LABELS, splitFailure } from '../../shared/providers'
+import { chooseFirst, PROVIDER_LABELS, splitFailure } from '../../shared/providers'
 import {
   AI_PROVIDERS, CAPSULE_ITEMS, elapsedMs, formatElapsed, isDivider, NOTE_MAX, OPACITY_RANGES, prettyAccelerator, tidyDividers, type AiProvider,
   type AutoCopy, type CapsuleItem, type State,
 } from '../../shared/state'
 import { GuessButton } from './ChatPanel'
-import { glint, isMac, opacityStyle, patch, useAppState, useGlass, useTick } from './glint'
+import { bottomOf, glint, isMac, opacityStyle, patch, useAppState, useGlass, useTick } from './glint'
 import { Icon } from './icons'
 import { usePlayback } from './mic'
-import { DashedEdge, DraftTextarea, Presence, Segmented } from './ui'
+import { DashedEdge, DraftTextarea, Presence, Range, Segmented } from './ui'
 
 // 1a Island: one capsule that holds every in-call control. Main sizes this window to what the page reports (the
 // capsule, the new-voice tray under it, an open popover and a tooltip), keeps the capsule centred, and hangs the
@@ -159,18 +159,12 @@ function useReportSize(root: React.RefObject<HTMLDivElement | null>) {
   const report = () => {
     const el = root.current
     if (!el) return
-    // Layout sizes, not getBoundingClientRect: a popover's opening scale must not shrink the window under it.
-    const bottom = (e: HTMLElement) => {
-      let y = e.offsetHeight
-      for (let n: HTMLElement | null = e; n && n !== el; n = n.offsetParent as HTMLElement | null) y += n.offsetTop
-      return y
-    }
     const flow = el.offsetHeight
     let h = flow
     // Room below for its shadow: Meeting options' reaches 24 + 60 px.
-    el.querySelectorAll<HTMLElement>('.popover').forEach((p) => (h = Math.max(h, bottom(p) + (p.classList.contains('options') ? 84 : 16))))
+    el.querySelectorAll<HTMLElement>('.popover').forEach((p) => (h = Math.max(h, bottomOf(p, el) + (p.classList.contains('options') ? 84 : 16))))
     const tip = document.querySelector<HTMLElement>('.tip') // fixed, outside the island: offsetTop is from the window's top
-    if (tip) h = Math.max(h, tip.offsetTop + tip.offsetHeight + 6)
+    if (tip) h = Math.max(h, bottomOf(tip) + 6)
     const size = { w: el.offsetWidth, h, flow }
     const k = JSON.stringify(size)
     if (k === last.current) return
@@ -372,7 +366,6 @@ function MeetingOptions({ c, hidden, more: moved, closing, onClose }: { c: ItemC
   const updateReady = s.update.status === 'available'
   const more = moved.filter((id) => id !== 'mode')
   const lang = s.transcription.language
-  const [min, max, step] = OPACITY_RANGES.background
   return (
     <div className={`popover options ${s.isInvisible ? '' : 'on-share'} ${closing ? 'closing' : ''}`} role="dialog" aria-label="Meeting options">
       <DashedEdge />
@@ -408,12 +401,7 @@ function MeetingOptions({ c, hidden, more: moved, closing, onClose }: { c: ItemC
       </label>
       <label className="opt">
         <span className="opt-label"><Icon name="bolt" />AI provider</span>
-        <select value={s.ai.provider} onChange={(e) => {
-          const provider = e.target.value as AiProvider
-          // As in Settings: the old first stays in the chain, just lower, and a CLI model name means nothing to the other CLI.
-          const fallbacks = [s.ai.provider, ...s.ai.fallbacks.filter((f) => f !== provider && f !== s.ai.provider)]
-          void patch({ ai: { provider, fallbacks, cliModel: '', cliSmartModel: '' } })
-        }}>
+        <select value={s.ai.provider} onChange={(e) => void patch({ ai: chooseFirst(s.ai, e.target.value as AiProvider) })}>
           {AI_PROVIDERS.map((p) => <option key={p} value={p}>{PROVIDER_LABELS[p]}</option>)}
         </select>
       </label>
@@ -424,8 +412,7 @@ function MeetingOptions({ c, hidden, more: moved, closing, onClose }: { c: ItemC
       </label>
       <label className="opt">
         <span>Opacity</span>
-        <input type="range" min={min} max={max} step={step} value={s.opacity.background} onChange={(e) => patch({ opacity: { background: Number(e.target.value) } })}
-          style={{ '--fill': `${((s.opacity.background - min) / (max - min)) * 100}%` } as React.CSSProperties} />
+        <Range range={OPACITY_RANGES.background} value={s.opacity.background} onChange={(background) => patch({ opacity: { background } })} />
         <output>{Math.round(s.opacity.background * 100)}%</output>
       </label>
       <hr />

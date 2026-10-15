@@ -206,6 +206,7 @@ export function resumeFrom(r: SavedSession, now: number): Session {
 
 /** Standalone chats (asked with no session running) are saved as records with no transcript. */
 export const isChatId = (id: string) => id.startsWith('chat-')
+export const titleOf = (r: Pick<SavedSession, 'id' | 'title'>) => r.title || (isChatId(r.id) ? 'Untitled chat' : 'Untitled session')
 
 /** A standalone chat's record: keeps `prev`'s start time and notes; untitled chats are named after the first question. */
 export function chatRecord(prev: SavedSession | null, id: string, messages: SavedMessage[], now: number): SavedSession {

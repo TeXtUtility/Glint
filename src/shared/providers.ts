@@ -41,6 +41,12 @@ export function providerOrder(ai: { provider: AiProvider; fallbacks: AiProvider[
   return [ai.provider, ...ai.fallbacks].filter((p, i, all) => all.indexOf(p) === i)
 }
 
+// The old first stays in the chain, just lower, and a CLI model name means nothing to the other CLI, or to an API.
+export function chooseFirst(ai: AiSettings, p: AiProvider): Partial<AiSettings> {
+  if (p === ai.provider) return {}
+  return { provider: p, fallbacks: [ai.provider, ...ai.fallbacks.filter((f) => f !== p && f !== ai.provider)], cliModel: '', cliSmartModel: '' }
+}
+
 /** One line for the UI: what failed, and who answered instead (or that nobody did). */
 export function failureSummary(failures: Failure[], answeredBy: AiProvider | null): string {
   const what = failures.map((f) => `${PROVIDER_LABELS[f.provider]} ${f.error.startsWith('timed out') ? '' : 'failed: '}${f.error}`).join(' · ')

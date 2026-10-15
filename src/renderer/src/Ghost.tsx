@@ -1,9 +1,9 @@
-import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react'
+import { useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { HUMANIZER_LABELS, type HumanizeStatus } from '../../shared/humanize'
 import { typeable } from '../../shared/markdown'
 import { ghostHints, type State } from '../../shared/state'
 import { FIELD, TypingEngine } from '../../shared/typing'
-import { glint, isMac, opacityStyle, patch } from './glint'
+import { glint, isMac, opacityStyle, patch, useGlanceSize } from './glint'
 import { Icon } from './icons'
 
 /** Characters in the strip, and how many of them are already typed: the Ghost app's 18 and 5. */
@@ -79,19 +79,7 @@ export function GhostPill({ s, replies, error, onOpen, onAsk }: {
     return () => offs.forEach((off) => off())
   }, [])
 
-  // Main sizes the window to exactly this content.
-  useLayoutEffect(() => {
-    const el = ref.current
-    if (!el) return
-    const send = () => {
-      const r = el.getBoundingClientRect()
-      glint.send('window:glance-size', { w: Math.ceil(r.width), h: Math.ceil(r.height) })
-    }
-    send()
-    const ro = new ResizeObserver(send)
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
+  useGlanceSize(ref)
 
   // A failed rewrite still leaves the original to type: the strip turns red around it, and the card says why.
   const hzFailed = reply?.hz?.stage === 'failed' && !error

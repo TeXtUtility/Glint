@@ -1,6 +1,6 @@
 // Motion components ported from GodUI (godui.design) into plain React + styles.css: no Tailwind or animation library.
 // Their springs are reproduced as CSS linear() easings (--spring-* in styles.css).
-import { useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type CSSProperties, type ReactNode, type RefObject } from 'react'
 import { glint, isMac } from './glint'
 
 /** Dash plus gap, in px, as the CSS dashed border draws it at 1.5px. */
@@ -118,13 +118,14 @@ export function Tooltips() {
 }
 
 /** iOS-style selector: a pill springs between the options. `value` null shows none selected. */
-export function Segmented<T extends string>({ label, value, options, onChange, tabs }: {
+export function Segmented<T extends string>({ label, value, options, onChange, tabs, className = '' }: {
   label: string
   value: T | null
   options: { value: T; label: ReactNode; tip?: string }[]
   onChange: (v: T) => void
   /** Tabs switch views (role tab); otherwise it's a choice (role radio). */
   tabs?: boolean
+  className?: string
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const [pill, setPill] = useState<{ left: number; width: number } | null>(null)
@@ -133,7 +134,7 @@ export function Segmented<T extends string>({ label, value, options, onChange, t
     setPill(el ? { left: el.offsetLeft, width: el.offsetWidth } : null)
   }, [value, options.length])
   return (
-    <div className="segmented" role={tabs ? 'tablist' : 'radiogroup'} aria-label={label} ref={ref}>
+    <div className={`segmented ${className}`} role={tabs ? 'tablist' : 'radiogroup'} aria-label={label} ref={ref}>
       {/* Mounted fresh when a selection appears, so it shows in place instead of sliding from the left. */}
       {pill && <span className="segmented-pill" aria-hidden="true" style={{ transform: `translateX(${pill.left}px)`, width: pill.width }} />}
       {options.map((o) => {
@@ -160,8 +161,8 @@ const HOLD_MS = 900
  * `quiet`: plain text at rest, a red pill only while held. `icon`: just the icon, `label` its name, for a row's action;
  * the tooltip says to hold.
  */
-export function ConfirmButton({ label, confirmLabel, onConfirm, quiet, icon, className = '' }: {
-  label: string; confirmLabel: string; onConfirm: () => void; quiet?: boolean; icon?: ReactNode; className?: string
+export function ConfirmButton({ label, confirmLabel, onConfirm, quiet, icon }: {
+  label: string; confirmLabel: string; onConfirm: () => void; quiet?: boolean; icon?: ReactNode
 }) {
   const [status, setStatus] = useState<'idle' | 'holding' | 'hint' | 'done'>('idle')
   const timer = useRef(0)
@@ -192,7 +193,7 @@ export function ConfirmButton({ label, confirmLabel, onConfirm, quiet, icon, cla
   const labels: Record<typeof status, ReactNode> = icon ? { idle: icon, holding: icon, hint: icon, done: null }
     : { idle: label, holding: confirmLabel, hint: 'Hold to confirm', done: 'Done' }
   return (
-    <button type="button" className={`hold ${quiet ? 'quiet' : ''} ${icon ? 'hold-icon' : ''} ${className}`} data-status={status}
+    <button type="button" className={`hold ${quiet ? 'quiet' : ''} ${icon ? 'hold-icon' : ''}`} data-status={status}
       data-tip={`Press and hold: ${confirmLabel}`} aria-label={icon ? label : undefined}
       onPointerDown={(e) => e.button === 0 && start()} onPointerUp={cancel} onPointerLeave={cancel} onPointerCancel={cancel}
       onKeyDown={(e) => isKey(e.key) && (e.preventDefault(), !e.repeat && start())} onKeyUp={(e) => isKey(e.key) && cancel()}>
@@ -252,18 +253,54 @@ export function Toast({ children, onDismiss, className = '', ...rest }: {
 /** Textarea that saves ~600 ms after typing stops, on blur, and on unmount, so nothing typed is lost. */
 export function DraftTextarea({ value, onSave, ...rest }: { value: string; onSave: (v: string) => void } & Omit<ComponentProps<'textarea'>, 'value' | 'onChange'>) {
   const [draft, setDraft] = useState(value)
-  const latest = useRef({ draft, value, onSave })
-  latest.current = { draft, value, onSave }
-  const save = () => {
-    if (latest.current.draft !== latest.current.value) latest.current.onSave(latest.current.draft)
-  }
+  const save = () => draft !== value && onSave(draft)
   useEffect(() => setDraft(value), [value])
-  useEffect(() => {
-    const t = setTimeout(save, 600)
-    return () => clearTimeout(t)
-  }, [draft])
-  useEffect(() => save, [])
+  useAutosave(draft, save, 600)
   return <textarea {...rest} value={draft} onChange={(e) => setDraft(e.target.value)} onBlur={save} />
+}
+
+/** The panel never has key focus, so Esc can't close this; any click outside does. */
+export function useDismiss(open: boolean, ref: RefObject<Element | null>, close: () => void) {
+  const latest = useRef(close)
+  latest.current = close
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: PointerEvent) => !ref.current?.contains(e.target as Node) && latest.current()
+    window.addEventListener('pointerdown', onDown)
+    return () => window.removeEventListener('pointerdown', onDown)
+  }, [open])
+}
+
+export function useFlash(ms: number): [boolean, (forMs?: number) => void] {
+  const [on, setOn] = useState(false)
+  const timer = useRef(0)
+  useEffect(() => () => clearTimeout(timer.current), [])
+  const flash = (forMs = ms) => {
+    clearTimeout(timer.current)
+    setOn(true)
+    timer.current = window.setTimeout(() => setOn(false), forMs)
+  }
+  return [on, flash]
+}
+
+export function useAutosave(value: unknown, save: () => void, ms: number) {
+  const latest = useRef(save)
+  latest.current = save
+  useEffect(() => {
+    const t = setTimeout(() => latest.current(), ms)
+    return () => clearTimeout(t)
+  }, [value])
+  useEffect(() => () => latest.current(), [])
+}
+
+/** A slider, with its filled part as --fill for the track's gradient. */
+export function Range({ range: [min, max, step], value, onChange, ...rest }: {
+  range: [number, number, number]; value: number; onChange: (v: number) => void
+} & Omit<ComponentProps<'input'>, 'value' | 'onChange'>) {
+  return (
+    <input {...rest} type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))}
+      style={{ '--fill': `${((value - min) / (max - min)) * 100}%` } as CSSProperties} />
+  )
 }
 
 /** Renders `children` while open, and for its closing animation after (`closing` true). */

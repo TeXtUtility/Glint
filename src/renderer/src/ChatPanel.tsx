@@ -6,7 +6,7 @@ import { autoAsk, composeNote, isRetry, lineKey, unsentLines, userPrompt } from 
 import {
   askEffort, formatElapsed, INACTIVITY_COUNTDOWN_S, INACTIVITY_MS, prettyAccelerator, type AiProvider, type State, type TranscriptItem,
 } from '../../shared/state'
-import { glint, isMac, opacityStyle, patch, useAppState, useGlass, useTick } from './glint'
+import { bottomOf, glint, isMac, opacityStyle, patch, useAppState, useGlass, useTick } from './glint'
 import { SessionControls } from './ControlBar'
 import { Dashboard } from './Dashboard'
 import { Icon } from './icons'
@@ -17,7 +17,7 @@ import { GhostPill } from './Ghost'
 import { Glance, type Cue } from './Glance'
 import { useCallCapture, useMicCapture, usePlayback } from './mic'
 import { withNote } from './screenshotNote'
-import { DashedEdge, Presence, Segmented, Toast } from './ui'
+import { DashedEdge, Presence, Segmented, Toast, useDismiss, useFlash } from './ui'
 
 const EMPTY_ASK_LABEL = 'Assist'
 const MOD = isMac ? '⌘' : 'Ctrl+'
@@ -132,7 +132,6 @@ export function ChatPanel() {
     const replyId = `${id}:reply`
     lastAskAt.current = Date.now()
     if (!brief && !typeable) void patch({ chat: { visible: true, expanded: true, view: 'chat' } }) // the capsule's Ask can come with the panel hidden
-    // ponytail: paywall check goes here once billing exists.
 
     abortRef.current?.abort()
     const ctrl = new AbortController()
@@ -314,24 +313,28 @@ export function ChatPanel() {
     return () => offs.forEach((off) => off())
   }, [])
 
-  // A new session starts a new chat; a resumed one loads its saved chat first.
+  // A new session starts a new chat; a resumed one, or one already live when this panel loads (reloaded after a
+  // crash), loads its saved chat first.
   const sessionId = s?.session?.id
-  const prevSession = useRef(sessionId)
+  const prevSession = useRef<string | undefined>(undefined)
+  const reloaded = useRef(!!sessionId)
   /** Session whose chat is safe to save: a resumed chat must load before it can overwrite what's on disk. */
   const loadedFor = useRef<string | undefined>(undefined)
   useEffect(() => {
     const prev = prevSession.current
     prevSession.current = sessionId
     if (sessionId === prev) return
+    const midSession = reloaded.current
+    reloaded.current = false
     // Final save for the session that just ended, including an answer that was still streaming.
     if (prev && loadedFor.current === prev && latest.current.msgs.length) {
       glint.send('session:messages', { sessionId: prev, messages: toSaved(latest.current.msgs) })
     }
     if (prev && !sessionId) setHistoryOpen(prev) // main opens the dashboard on end: show this session's notes
     if (!sessionId) return // the thread keeps saving into the session that just ended
-    newChat()
+    if (!midSession) newChat()
     saveTo.current = { session: sessionId }
-    if (!latest.current.s?.session?.isResumed) return void (loadedFor.current = sessionId)
+    if (!midSession && !latest.current.s?.session?.isResumed) return void (loadedFor.current = sessionId)
     void glint.invoke<SavedSession | null>('session:load', sessionId).then(
       (r) => {
         if (latest.current.s?.session?.id !== sessionId) return // stopped or replaced meanwhile
@@ -464,13 +467,6 @@ export function ChatPanel() {
     return () => window.removeEventListener('pointerdown', onDown)
   }, [modeOpen])
 
-  useLayoutEffect(() => {
-    const el = inputRef.current
-    if (!el) return
-    el.style.height = 'auto'
-    el.style.height = `${Math.min(el.scrollHeight, 56)}px`
-  }, [input])
-
   // The collapsed panel (input and notices) is as tall as its content, plus a tooltip below it while one shows (there's
   // no room above: the capsule is there); main sizes the window to it.
   const panelRef = useRef<HTMLDivElement>(null)
@@ -487,10 +483,7 @@ export function ChatPanel() {
       const tip = document.querySelector<HTMLElement>('.tip') // fixed: offsetTop is from the window's top
       // The session row's mode menu hangs below a short panel. Layout sizes: its opening scale must not shrink the window.
       const menu = el.querySelector<HTMLElement>('.popover')
-      let menuBottom = 0
-      for (let n: HTMLElement | null = menu; n; n = n.offsetParent as HTMLElement | null) menuBottom += n.offsetTop
-      if (menu) menuBottom += menu.offsetHeight + 6
-      const h = Math.ceil(Math.max(el.offsetHeight + 6, tip ? tip.offsetTop + tip.offsetHeight + 6 : 0, menuBottom)) // + the body's padding (styles.css)
+      const h = Math.ceil(Math.max(el.offsetHeight + 6, tip ? bottomOf(tip) + 6 : 0, menu ? bottomOf(menu) + 6 : 0)) // + the body's padding (styles.css)
       if (h !== last) glint.send('window:panel-height', (last = h)) // the observer fires on every keystroke and animation
     }
     send()
@@ -671,8 +664,7 @@ export function ChatPanel() {
 
 /** Flashes "Copied" for 1.5 s when clicked, and once when the reply was copied for you. */
 function CopyReply({ text, copiedAt }: { text: string; copiedAt?: number }) {
-  const [done, setDone] = useState(false)
-  const flash = (ms = 1500) => (setDone(true), setTimeout(() => setDone(false), ms))
+  const [done, flash] = useFlash(1500)
   useEffect(() => void (copiedAt && Date.now() - copiedAt < 1500 && flash(1500 - (Date.now() - copiedAt))), [copiedAt])
   return (
     <button className={`icon-btn copy ${done ? 'done' : ''}`} aria-label="Copy" data-tip={copiedAt ? 'Already copied for you. Click to copy again' : 'Copy this reply'}
@@ -699,13 +691,14 @@ function thumbnail(url: string): Promise<string> {
   })
 }
 
+const seenWithin = (seen: Map<string, number>, key: string, ms: number) => {
+  if (!seen.has(key)) seen.set(key, Date.now())
+  return Date.now() - seen.get(key)! < ms
+}
+
 /** When each transcript line was first shown (0: it arrived while the transcript wasn't open). */
 const lineSeen = new Map<string, number>()
-const isNewLine = (t: TranscriptItem) => {
-  const k = lineKey(t)
-  if (!lineSeen.has(k)) lineSeen.set(k, Date.now())
-  return Date.now() - lineSeen.get(k)! < 450
-}
+const isNewLine = (t: TranscriptItem) => seenWithin(lineSeen, lineKey(t), 450)
 
 /** What a searched ask sent; the passages go into the page only while opened, since each can be ~120k characters. */
 function SearchedNote({ searched }: { searched: NonNullable<Msg['searched']> }) {
@@ -727,10 +720,7 @@ function searchedLabel({ count, pages }: NonNullable<Msg['searched']>) {
 
 /** When each message was first shown: only new ones rise in, not the whole thread each time the Chat view opens. */
 const firstShown = new Map<string, number>()
-const isFresh = (id: string) => {
-  if (!firstShown.has(id)) firstShown.set(id, Date.now())
-  return Date.now() - firstShown.get(id)! < 450 // the class outlives the animation, so re-renders mid-way don't cut it
-}
+const isFresh = (id: string) => seenWithin(firstShown, id, 450) // the class outlives the animation, so re-renders mid-way don't cut it
 
 /** `discreet`: a streaming answer shows whole sentences only, so nothing ticks along word by word. */
 function Thread({ msgs, discreet, setOriginal }: { msgs: Msg[]; discreet: boolean; setOriginal: (id: string) => void }) {
@@ -907,12 +897,7 @@ function SpeakerMenu({ id, speakers, people, closing, wrap, onClose }: {
   const act = (p: Promise<unknown>) => void p.then(onClose, (err: Error) => setError(err.message))
   const player = usePlayback()
 
-  // The panel never has key focus, so Esc can't close this; any click outside does.
-  useEffect(() => {
-    const onDown = (e: PointerEvent) => !wrap.current?.contains(e.target as Node) && onClose()
-    window.addEventListener('pointerdown', onDown)
-    return () => window.removeEventListener('pointerdown', onDown)
-  }, [])
+  useDismiss(true, wrap, onClose)
 
   const merge = (into: string) => {
     // Two saved people: the one clicked is deleted, so ask once more.
