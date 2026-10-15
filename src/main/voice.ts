@@ -62,7 +62,10 @@ export function loadVoiceModel(): Promise<void> {
     if (!fs.existsSync(modelPath())) await download()
     const w = createVoiceWorker()
     w.on('exit', () => {
-      if (worker?.w === w) (worker = null), (loading = null)
+      if (worker?.w !== w) return
+      worker = null
+      loading = null
+      patchState({ voiceModel: 'failed' })
     })
     const ask = await loadWorker(w, { t: 'load', model: modelPath(), segmentation: SEGMENTATION_PATH }, 'voice model')
     if (gen !== generation) {
