@@ -1,5 +1,6 @@
 ## Unreleased
 
+- **The first answer comes from a provider that works.** At launch, if the first provider in Settings → AI isn't set up (no key, or Claude Code or Codex missing or signed out), Glint moves the ones that are ready to the top, keeping your order otherwise. With none of yours ready, a signed-in Claude Code or Codex leads, then an API key.
 - **Installers.** Each release on GitHub now comes with a DMG for Apple silicon and Intel Macs and a Windows setup file, so installing no longer needs Terminal or PowerShell. A copy installed from one is offered the next release's installer when it's out. The one-line install still works and still updates by building from source.
 - **Search the web.** Settings → AI → Search the web lets the AI look things up when an answer needs current facts, on every provider: Claude and OpenAI keys, Claude Code and Codex. Chat answers end with their sources; Glance and Ghost show only the answer. Notes, follow-ups and name guesses never search, and on OpenAI and Codex, which can open pages, neither do Glance's automatic answers, so something said in a call can't send the AI to a page.
 - **License.** Glint is MIT with the Commons Clause: free to use anywhere and to change and share, but not to sell. CONTRIBUTING.md and community terms are new.

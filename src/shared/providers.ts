@@ -47,6 +47,23 @@ export function chooseFirst(ai: AiSettings, p: AiProvider): Partial<AiSettings> 
   return { provider: p, fallbacks: [ai.provider, ...ai.fallbacks.filter((f) => f !== p && f !== ai.provider)], cliModel: '', cliSmartModel: '' }
 }
 
+/** Who leads when none of the chosen ones can answer: subscriptions first, since they cost nothing extra. */
+const SETUP_PREFERENCE: AiProvider[] = ['claude-cli', 'codex-cli', 'anthropic', 'openai']
+
+/**
+ * The order with the providers that can answer ahead of those that can't, each group keeping its order, so an ask
+ * never goes first to one that isn't set up. With none of the chosen ones ready, the first ready provider of all leads.
+ * Null when the first one is ready already, or none is.
+ */
+export function readyFirst(ai: AiSettings, ready: Set<AiProvider>): Partial<AiSettings> | null {
+  const order = providerOrder(ai)
+  if (ready.has(order[0])) return null
+  const lead = order.find((p) => ready.has(p)) ?? SETUP_PREFERENCE.find((p) => ready.has(p))
+  if (!lead) return null
+  const rest = order.filter((p) => p !== lead)
+  return { ...chooseFirst(ai, lead), fallbacks: [...rest.filter((p) => ready.has(p)), ...rest.filter((p) => !ready.has(p))] }
+}
+
 /** One line for the UI: what failed, and who answered instead (or that nobody did). */
 export function failureSummary(failures: Failure[], answeredBy: AiProvider | null): string {
   const what = failures.map((f) => `${PROVIDER_LABELS[f.provider]} ${f.error.startsWith('timed out') ? '' : 'failed: '}${f.error}`).join(' · ')

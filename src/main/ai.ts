@@ -78,6 +78,12 @@ function usable(provider: AiProvider): boolean {
     return false // a saved key that can't be read
   }
 }
+/** The providers that could answer now: an API with a key, a CLI that's installed and signed in. */
+export async function readyProviders(): Promise<Set<AiProvider>> {
+  const clis = await Promise.all((['claude-cli', 'codex-cli'] as const).map(async (p) => ((await cliStatus(p)).ok ? [p] : [])))
+  return new Set<AiProvider>([...(['anthropic', 'openai'] as const).filter(usable), ...clis.flat()])
+}
+
 /** Who will answer the next ask: the first provider in order that's set up. */
 const answerer = (ai: State['ai']) => providerOrder(ai).find(usable)
 

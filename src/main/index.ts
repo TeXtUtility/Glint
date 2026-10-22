@@ -13,7 +13,8 @@ import { NAME_GUESS_SYSTEM_PROMPT, nameGuessContext, nameGuessQuestion, parseNam
 import { transcriptText } from '../shared/history'
 import { HUMANIZER_LABELS, HUMANIZERS, humanizes, type HumanizerConfig, type HumanizerService } from '../shared/humanize'
 import { scrub } from '../shared/markdown'
-import { askWithFallbacks, cliStatus, complete, coolClaudeCli, keyStatus, removeLeftoverTemp, setKey, statusOf, warmCache, warmClaudeCli } from './ai'
+import { askWithFallbacks, cliStatus, complete, coolClaudeCli, keyStatus, readyProviders, removeLeftoverTemp, setKey, statusOf, warmCache, warmClaudeCli } from './ai'
+import { readyFirst } from '../shared/providers'
 import { addModeFiles, passagesFor, prepareSearch, referenceFor, removeModeFile, sweepModeFiles } from './files'
 import { bugReport, initLog, logTail, setVerbose, verbose } from './log'
 import { modelUsage, removeUnusedModels, sweepModels } from './models'
@@ -190,6 +191,11 @@ function boot() {
   buildAppMenu()
   registerIpc()
   booted = true
+  // The first ask goes to a provider that can answer it: ones not set up move below the ones that are.
+  void readyProviders().then((ready) => {
+    const order = readyFirst(getState().ai, ready)
+    if (order) patchState({ ai: order })
+  })
   if (pendingLink) handleLink(pendingLink)
   pendingLink = null
 }

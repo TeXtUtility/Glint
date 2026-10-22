@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { AllFailedError, failureSummary, prettyModel, providerOrder, splitFailure, tryInOrder } from './providers.ts'
-import type { AiProvider } from './state.ts'
+import { AllFailedError, failureSummary, prettyModel, providerOrder, readyFirst, splitFailure, tryInOrder } from './providers.ts'
+import { PERSISTED_DEFAULTS, type AiProvider } from './state.ts'
 
 test('providerOrder: chosen first, fallbacks after, no repeats', () => {
   assert.deepEqual(providerOrder({ provider: 'openai', fallbacks: ['claude-cli', 'openai', 'anthropic'] }), ['openai', 'claude-cli', 'anthropic'])
@@ -84,4 +84,18 @@ test('tryInOrder: a provider that stalls before answering hands over to the next
   }, { firstTextMs: () => 100 })
   for (let i = 0; i < 12; i++) (t.mock.timers.tick(10), await new Promise(setImmediate))
   assert.deepEqual(await thinking, { provider: 'anthropic', failures: [] })
+})
+
+test('readyFirst: an ask never goes first to a provider that is not set up', () => {
+  const base = { ...PERSISTED_DEFAULTS.ai, provider: 'anthropic' as const, fallbacks: ['claude-cli', 'codex-cli'] as AiProvider[], cliModel: 'opus' }
+  // The chosen one works: the order is left as the user set it.
+  assert.equal(readyFirst(base, new Set<AiProvider>(['anthropic', 'codex-cli'])), null)
+  // Only Codex is signed in: it leads, then the rest in their order, ready ones first.
+  assert.deepEqual(readyFirst(base, new Set<AiProvider>(['codex-cli'])), { provider: 'codex-cli', fallbacks: ['anthropic', 'claude-cli'], cliModel: '', cliSmartModel: '' })
+  assert.deepEqual(readyFirst({ ...base, provider: 'claude-cli', fallbacks: ['anthropic', 'codex-cli', 'openai'] }, new Set<AiProvider>(['openai', 'codex-cli'])),
+    { provider: 'codex-cli', fallbacks: ['openai', 'claude-cli', 'anthropic'], cliModel: '', cliSmartModel: '' })
+  // None of the chosen ones is ready: the first ready provider of all leads.
+  assert.equal(readyFirst({ ...base, fallbacks: [] }, new Set<AiProvider>(['openai']))?.provider, 'openai')
+  // Nothing is ready: nothing to fix.
+  assert.equal(readyFirst(base, new Set()), null)
 })
