@@ -112,6 +112,8 @@
     ],
     "mac": {
       "files": [
+        "out/**/*",
+        "LICENSE",
         "!node_modules/onnxruntime-node/bin/napi-v*/{linux,win32}/**",
         "!node_modules/onnxruntime-node/bin/napi-v*/darwin/*/libonnxruntime.1.*.*.dylib",
         "!node_modules/unpdf/**"
@@ -134,6 +136,8 @@
       "target": "dir",
       "icon": "build/icon.png",
       "files": [
+        "out/**/*",
+        "LICENSE",
         "!node_modules/onnxruntime-node/bin/napi-v*/{linux,darwin}/**",
         "!node_modules/onnxruntime-node/bin/napi-v*/win32/arm64/**",
         "!node_modules/audiotee/bin/**"
