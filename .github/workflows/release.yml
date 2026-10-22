@@ -119,6 +119,10 @@ jobs:
           [[ -s notes.md ]] || echo "Glint $version" > notes.md
           if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$TAG" installers/* --clobber -R "$GITHUB_REPOSITORY"
+            # Installers this build no longer makes (renamed or dropped) go.
+            gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | while read -r name; do
+              [[ -e "installers/$name" ]] || gh release delete-asset "$TAG" "$name" -y -R "$GITHUB_REPOSITORY"
+            done
           else
             gh release create "$TAG" installers/* --target "$GITHUB_SHA" --title "Glint $version" --notes-file notes.md -R "$GITHUB_REPOSITORY"
           fi

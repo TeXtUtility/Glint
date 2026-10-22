@@ -78,10 +78,10 @@ test("A release install is offered the newest release's installer for its system
   const { shell } = await import('electron')
   const opened = mock.method(shell, 'openExternal', async () => {})
   const sha = '9c0d1e3b5a7c9e1f2a3b4c5d6e7f804288055f2a'
-  const mine = process.platform === 'win32' ? 'Glint-Setup-9.0.0.exe' : `Glint-9.0.0-${process.arch}.dmg`
+  const mine = process.platform === 'win32' ? 'Glint-Setup.exe' : `Glint-${process.arch}.dmg`
   github((url) =>
     url.endsWith('/releases/latest')
-      ? { tag_name: 'v9.0.0', assets: [{ name: 'Glint-9.0.0-other.dmg', browser_download_url: 'https://x/other' }, { name: mine, browser_download_url: 'https://x/mine' }] }
+      ? { tag_name: 'v9.0.0', assets: [{ name: 'Glint-other.dmg', browser_download_url: 'https://x/other' }, { name: mine, browser_download_url: 'https://x/mine' }] }
       : url.endsWith('/commits/v9.0.0') ? { sha } : 404)
   await checkForUpdate(true)
   assert.equal(getState().update.status, 'available')

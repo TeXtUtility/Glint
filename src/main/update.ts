@@ -125,8 +125,11 @@ async function stableUpdate(): Promise<Offer | null> {
   return (await compare(head, __GLINT_COMMIT__)).ahead ? { version: latest, channel: 'stable', commit: head } : null
 }
 
-/** The installer a release attaches for this system (see .github/workflows/release.yml). */
-const PACKAGE = process.platform === 'win32' ? /^Glint-Setup-.+\.exe$/ : new RegExp(`^Glint-.+-${process.arch}\\.dmg$`)
+/**
+ * The installer a release attaches for this system (see .github/workflows/release.yml). The names stay the same from
+ * release to release, so releases/latest/download/<name> is always the newest; older releases put the version in.
+ */
+const PACKAGE = process.platform === 'win32' ? /^Glint-Setup(-.+)?\.exe$/ : new RegExp(`^Glint-(.+-)?${process.arch}\\.dmg$`)
 /** Where the offered release's installer downloads from. */
 let offeredDownload = ''
 

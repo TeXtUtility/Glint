@@ -59,11 +59,11 @@
   },
   "build": {
     "appId": "io.github.textutility.glint",
-    "artifactName": "Glint-${version}-${arch}.${ext}",
+    "artifactName": "Glint-${arch}.${ext}",
     "nsis": {
       "oneClick": true,
       "perMachine": false,
-      "artifactName": "Glint-Setup-${version}.${ext}"
+      "artifactName": "Glint-Setup.${ext}"
     },
     "files": [
       "out/**/*",
