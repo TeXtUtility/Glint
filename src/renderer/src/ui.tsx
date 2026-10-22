@@ -313,3 +313,9 @@ export function Presence({ open, children }: { open: boolean; children: (closing
   return open || mounted ? <>{children(!open)}</> : null
 }
 
+
+/** Where each API's keys are made. */
+export const CONSOLES = { anthropic: 'https://console.anthropic.com/settings/keys', openai: 'https://platform.openai.com/api-keys' } as const
+
+/** Text with `backticked` commands shown as code. */
+export const withCode = (text: string) => text.split(/`([^`]+)`/).map((part, i) => (i % 2 ? <code key={i}>{part}</code> : part))

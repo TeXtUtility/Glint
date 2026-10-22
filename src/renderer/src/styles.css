@@ -753,6 +753,12 @@ html[data-route="onboarding"] body { font-size: 13px; }
 html[data-route="onboarding"] .ob-perms .allowed, html[data-route="onboarding"] .ob-perms li.ok .disc { color: var(--ok); }
 .ob-action { height: 32px; padding: 0 14px; border-radius: 16px; background: #7b8fff; color: #10121c !important; font-size: 12.5px; font-weight: 600; }
 .ob-action:disabled { background: var(--btn); color: var(--faint) !important; }
+.ob-key { display: flex; align-items: center; gap: 8px; }
+.ob-key input { width: 150px; height: 32px; padding: 0 12px; border-radius: 16px; border: 1px solid var(--line); background: var(--card); color: inherit; font-size: 12.5px; outline: none; }
+.ob-key input:focus { border-color: rgba(123, 143, 255, 0.6); }
+.ob-key input[aria-invalid="true"] { border-color: var(--danger); }
+.ob-perms .text code { font-size: 11.5px; }
+.ob-perms .text .error { color: var(--danger-text); }
 .ob-login { display: flex; align-items: center; gap: 8px; margin: 14px 0 0; font-size: 12.5px; color: var(--muted); }
 .ob-speech { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--faint); }
 .ob-speech.error { color: var(--danger); }

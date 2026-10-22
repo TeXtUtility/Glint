@@ -12,7 +12,7 @@ import { CapsuleItemView, languageOptions } from './ControlBar'
 import { COMPUTER, ENCRYPTED, glint, isMac, KEY_GONE, OS, patch, useAppState } from './glint'
 import { Icon } from './icons'
 import { defaultMic, openMic, peak, startRecording, usePlayback, type Recording } from './mic'
-import { ConfirmButton, DraftTextarea, Range, Segmented, useAutosave } from './ui'
+import { ConfirmButton, CONSOLES, DraftTextarea, Range, Segmented, useAutosave, withCode } from './ui'
 
 declare const __GLINT_COMMIT__: string // electron.vite.config.ts
 
@@ -395,7 +395,6 @@ const METER_BARS = [6, 10, 14, 9, 5, 5]
 
 // AI
 
-const CONSOLES: Record<KeyProvider, string> = { anthropic: 'https://console.anthropic.com/settings/keys', openai: 'https://platform.openai.com/api-keys' }
 const isCli = (p: AiProvider) => p === 'claude-cli' || p === 'codex-cli'
 
 /** Every provider in the order Glint tries them: the chosen one, its fallbacks in order, then the rest. */
@@ -1588,4 +1587,3 @@ function DevSlider({ label, hint, range, value, format, onChange }: {
 }
 
 /** Commands in `backticks` as monospace. */
-const withCode = (text: string) => text.split(/`([^`]+)`/).map((part, i) => (i % 2 ? <code key={i}>{part}</code> : part))

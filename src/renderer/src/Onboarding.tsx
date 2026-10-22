@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { SAMPLE_CALL, SAMPLE_CALL_S } from '../../shared/prompt'
-import { formatElapsed, prettyAccelerator, speechModelFor, type ShortcutAction, type State } from '../../shared/state'
+import { PROVIDER_LABELS, readyFirst } from '../../shared/providers'
+import { formatElapsed, prettyAccelerator, speechModelFor, type AiProvider, type KeyProvider, type ShortcutAction, type State } from '../../shared/state'
 import { COMPUTER, glint, isMac, patch, SYSTEM_SETTINGS, useAppState } from './glint'
 import { Icon } from './icons'
+import { CONSOLES, withCode } from './ui'
 
 const PERMS = isMac
   ? [
@@ -14,8 +16,8 @@ const PERMS = isMac
     ] as const
   : ([{ kind: 'mic', icon: 'mic', name: 'Microphone', why: 'To transcribe what you say. Windows turns it on for all desktop apps at once.' }] as const)
 
-type Step = 'welcome' | 'permissions' | 'demos'
-const STEP_LABELS: Record<Step, string> = { welcome: 'Welcome', permissions: 'Permissions', demos: 'Try it' }
+type Step = 'welcome' | 'permissions' | 'ai' | 'demos'
+const STEP_LABELS: Record<Step, string> = { welcome: 'Welcome', permissions: 'Permissions', ai: 'AI', demos: 'Try it' }
 
 export function Onboarding() {
   const s = useAppState()
@@ -29,7 +31,7 @@ export function Onboarding() {
   // permissions.
   const current = step ?? (s.onboardingDone || (isMac && PERMS.some((p) => s.permissions[p.kind] === 'granted')) ? 'permissions' : 'welcome')
   const only = s.onboardingDone // a revoked permission: nothing else to show
-  const steps: Step[] = only ? ['permissions'] : ['welcome', 'permissions', 'demos']
+  const steps: Step[] = only ? ['permissions'] : ['welcome', 'permissions', 'ai', 'demos']
   const go = (to: Step) => (setDir(steps.indexOf(to) >= steps.indexOf(current) ? 1 : -1), setStep(to))
   const finish = () => {
     glint.send('practice:stop')
@@ -44,8 +46,9 @@ export function Onboarding() {
         {current === 'welcome' && <Welcome s={s} onNext={() => go('permissions')} />}
         {current === 'permissions' && (
           <Permissions s={s} speech={speech} onBack={only ? undefined : () => go('welcome')}
-            onContinue={() => (only ? void patch({ onboardingDone: true }) : go('demos'))} />
+            onContinue={() => (only ? void patch({ onboardingDone: true }) : go('ai'))} />
         )}
+        {current === 'ai' && <AiSetup s={s} onBack={() => go('permissions')} onContinue={() => go('demos')} />}
         {current === 'demos' && <TryIt s={s} onDone={finish} />}
       </main>
     </div>
@@ -65,6 +68,7 @@ function Rail({ s, steps, current }: { s: State; steps: Step[]; current: Step })
             <span className="label">
               {STEP_LABELS[st]}
               {st === 'permissions' && i === at && <small>{granted} of {PERMS.length} granted</small>}
+              {st === 'ai' && i === at && <small>Pick at least one</small>}
             </span>
           </li>
         ))}
@@ -161,6 +165,89 @@ function Permissions({ s, speech, onBack, onContinue }: {
           onClick={() => (askLogin && void patch({ openAtLogin: login, openAtLoginInitialized: true }), onContinue())}>Continue</button>
       </div>
     </div>
+  )
+}
+
+const AI_ROWS: { p: AiProvider; icon: 'terminal' | 'bolt'; why: string; setUp?: string }[] = [
+  { p: 'claude-cli', icon: 'terminal', why: 'Your Claude subscription, through Claude Code. Nothing extra to pay.', setUp: 'Install it with `npm install -g @anthropic-ai/claude-code`, then run `claude auth login`.' },
+  { p: 'codex-cli', icon: 'terminal', why: 'Your ChatGPT plan, through Codex. Nothing extra to pay.', setUp: 'Install it with `npm install -g @openai/codex`, then run `codex login`.' },
+  { p: 'anthropic', icon: 'bolt', why: 'An Anthropic API key. You pay Anthropic a few cents an answer.' },
+  { p: 'openai', icon: 'bolt', why: 'An OpenAI API key. You pay OpenAI a few cents an answer.' },
+]
+
+/** Which AI answers: a subscription CLI that's signed in, or an API key, checked and saved here as in Settings → AI. */
+function AiSetup({ s, onBack, onContinue }: { s: State; onBack: () => void; onContinue: () => void }) {
+  const [cli, setCli] = useState<Partial<Record<AiProvider, { ok: boolean; detail: string } | 'checking'>>>({})
+  const check = (p: 'claude-cli' | 'codex-cli') => {
+    setCli((c) => ({ ...c, [p]: 'checking' }))
+    void glint.invoke<{ ok: boolean; detail: string }>('ai:cli-status', p).then(
+      (r) => setCli((c) => ({ ...c, [p]: r })),
+      (err: Error) => setCli((c) => ({ ...c, [p]: { ok: false, detail: err.message } })),
+    )
+  }
+  const [keyError, setKeyError] = useState<Partial<Record<KeyProvider, string>>>({})
+  useEffect(() => (check('claude-cli'), check('codex-cli')), [])
+  const isReady = (p: AiProvider) => (p === 'anthropic' || p === 'openai' ? s.aiKeys[p] === 'saved' : (cli[p] as { ok?: boolean } | undefined)?.ok === true)
+  const ready = new Set(AI_ROWS.map((r) => r.p).filter(isReady))
+  // The ready ones answer first, so the first question goes to one that works.
+  const next = () => {
+    const order = readyFirst(s.ai, ready)
+    if (order) void patch({ ai: order })
+    onContinue()
+  }
+  return (
+    <div className="ob-page">
+      <div className="ob-heading">
+        <h1>Pick the AI that answers</h1>
+        <p>Use a subscription you already have, or an API key. Glint talks only to the ones you set up, and tries the next if one fails.</p>
+      </div>
+      <ul className="ob-perms">
+        {AI_ROWS.map(({ p, icon, why, setUp }) => {
+          const ok = ready.has(p)
+          const status = cli[p]
+          const detail = status && status !== 'checking' && !status.ok ? (/isn't installed/.test(status.detail) && setUp ? setUp : status.detail) : ''
+          return (
+            <li key={p} className={ok ? 'ok' : ''}>
+              <span className="disc"><Icon name={icon} size={20} /></span>
+              <span className="text">
+                <b>{PROVIDER_LABELS[p]}</b>
+                <span>{why}</span>
+                {detail && <span>{withCode(detail)}</span>}
+                {(p === 'anthropic' || p === 'openai') && !ok && (keyError[p]
+                  ? <span className="error">{keyError[p]}</span>
+                  : <span><a href={CONSOLES[p]} target="_blank" rel="noreferrer">Get a key</a></span>)}
+              </span>
+              {ok ? <span className="allowed"><Icon name="checkCircle" />Ready</span>
+                : p === 'anthropic' || p === 'openai' ? <KeyInput provider={p} onError={(e) => setKeyError((k) => ({ ...k, [p]: e }))} />
+                : <button className="ob-action" disabled={status === 'checking'} onClick={() => check(p as 'claude-cli' | 'codex-cli')}>
+                    {status === 'checking' ? 'Checking…' : 'Check again'}
+                  </button>}
+            </li>
+          )
+        })}
+      </ul>
+      <div className="ob-foot">
+        {!ready.size && <button className="ob-link" onClick={onContinue}>Set it up later</button>}
+        <span className="grow" />
+        <button className="ob-back" onClick={onBack}>Back</button>
+        <button className={`ob-primary ${ready.size ? '' : 'waiting'}`} disabled={!ready.size} onClick={next}>Continue</button>
+      </div>
+    </div>
+  )
+}
+
+/** An API key, saved encrypted like Settings → AI saves it; the row turns Ready once it is. */
+function KeyInput({ provider, onError }: { provider: KeyProvider; onError: (error: string) => void }) {
+  const [value, setValue] = useState('')
+  const [error, setError] = useState('')
+  const fail = (e: string) => (setError(e), onError(e))
+  const save = () => void glint.invoke('ai:set-key', provider, value).then(() => setValue(''), (err: Error) => fail(err.message))
+  return (
+    <form className="ob-key" onSubmit={(e) => (e.preventDefault(), save())}>
+      <input type="password" autoComplete="off" spellCheck={false} placeholder="Paste key" aria-label={`${PROVIDER_LABELS[provider]} key`}
+        aria-invalid={!!error} value={value} onChange={(e) => (setValue(e.target.value), error && fail(''))} />
+      <button type="submit" className="ob-action" disabled={!value.trim()}>Save</button>
+    </form>
   )
 }
 
