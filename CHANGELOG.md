@@ -1,5 +1,7 @@
 ## Unreleased
 
+- **Claude Code installed after Glint is found.** Glint looks in the folder Claude Code's installer uses, and reads your PATH again whenever a command isn't found, so a CLI installed while Glint was running works without restarting it. Settings → AI's status check tries again straight away.
+- **No AI, told at launch.** If no provider can answer (no key, and Claude Code and Codex aren't signed in), Glint says so when it opens: a notification that opens Settings → AI, and a red line on the capsule, instead of the first ask failing.
 - **Smaller app.** The packaged app carried Glint's source, tests and docs next to the build. It now holds only the build, its libraries and the license.
 - **The first answer comes from a provider that works.** At launch, if the first provider in Settings → AI isn't set up (no key, or Claude Code or Codex missing or signed out), Glint moves the ones that are ready to the top, keeping your order otherwise. With none of yours ready, a signed-in Claude Code or Codex leads, then an API key.
 - **Installers.** Each release on GitHub now comes with a DMG for Apple silicon and Intel Macs and a Windows setup file, so installing no longer needs Terminal or PowerShell. A copy installed from one is offered the next release's installer when it's out. The one-line install still works and still updates by building from source.

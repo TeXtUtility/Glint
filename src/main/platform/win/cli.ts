@@ -17,6 +17,11 @@ export function shellPath(): Promise<string> {
   }))
 }
 
+/** A command wasn't found: the next lookup reads the saved PATH again, for a CLI installed since. */
+export function forgetShellPath() {
+  saved = null
+}
+
 /**
  * A CLI's program and leading arguments. npm installs a .cmd launcher on Windows, which only cmd.exe runs, and its
  * quoting mangles JSON and empty arguments, so the script the launcher points at runs with node instead.

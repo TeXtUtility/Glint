@@ -404,7 +404,7 @@ async function askOpenAiApi(model: string, think: boolean, search: boolean, syst
  * What the CLI itself says about its sign-in. Its login is separate from the Claude or ChatGPT app's, so the app
  * being signed in says nothing about whether the CLI Glint runs is.
  */
-export async function cliStatus(provider: 'claude-cli' | 'codex-cli'): Promise<{ ok: boolean; detail: string }> {
+export async function cliStatus(provider: 'claude-cli' | 'codex-cli', retry = true): Promise<{ ok: boolean; detail: string }> {
   const PATH = await platform.shellPath()
   const [cmd, args] = provider === 'claude-cli' ? ['claude', ['auth', 'status']] : ['codex', ['login', 'status']]
   const signIn = provider === 'claude-cli' ? 'Run `claude auth login` in a terminal.' : 'Run `codex login` in a terminal.'
@@ -412,7 +412,11 @@ export async function cliStatus(provider: 'claude-cli' | 'codex-cli'): Promise<{
   return new Promise((resolve) => {
     // Exits non-zero when signed out, so read the output either way.
     execFile(file, [...lead, ...args], { env: { ...process.env, PATH }, timeout: 15_000, windowsHide: true }, (err, stdout, stderr) => {
-      if ((err as NodeJS.ErrnoException | null)?.code === 'ENOENT') return resolve({ ok: false, detail: `The \`${cmd}\` command isn't installed.` })
+      if ((err as NodeJS.ErrnoException | null)?.code === 'ENOENT') {
+        // Maybe installed since the PATH was read: once more with it read again.
+        platform.forgetShellPath()
+        return resolve(retry ? cliStatus(provider, false) : { ok: false, detail: `The \`${cmd}\` command isn't installed.` })
+      }
       if (provider === 'claude-cli') {
         try {
           const j = JSON.parse(stdout)
@@ -505,6 +509,7 @@ async function startClaude(args: string[], system: string, key: string, busy = f
   createInterface({ input: child.stdout }).on('line', (line) => w.onLine?.(line))
   w.exited = new Promise<number | null>((resolve) => {
     child.on('error', (err: NodeJS.ErrnoException) => {
+      if (err.code === 'ENOENT') platform.forgetShellPath() // the next try looks again, in case it's installed since
       w.stderr = err.code === 'ENOENT' ? "Couldn't find the `claude` command. Install it and sign in, or pick another provider in Settings → AI." : err.message
       resolve(null)
     })
@@ -661,9 +666,10 @@ async function askCodexCli(model: string, _think: boolean, search: boolean, syst
     let stderr = ''
     child.stderr.on('data', (d) => (stderr = (stderr + d).slice(-4000)))
     const code = await new Promise<number | null>((resolve, reject) => {
-      child.on('error', (err: NodeJS.ErrnoException) =>
-        reject(err.code === 'ENOENT' ? new Error("Couldn't find the `codex` command. Install it and sign in, or pick another provider in Settings → AI.") : err),
-      )
+      child.on('error', (err: NodeJS.ErrnoException) => {
+        if (err.code === 'ENOENT') platform.forgetShellPath() // the next try looks again, in case it's installed since
+        reject(err.code === 'ENOENT' ? new Error("Couldn't find the `codex` command. Install it and sign in, or pick another provider in Settings → AI.") : err)
+      })
       child.on('close', resolve)
     })
     if (signal.aborted) return

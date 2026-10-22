@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { mock, test } from 'node:test'
-import { coolClaudeCli, runAsk, warmClaudeCli } from './ai.ts'
+import { cliStatus, coolClaudeCli, runAsk, warmClaudeCli } from './ai.ts'
 import { platform } from './platform/index.ts'
 import { getState, initState } from './state.ts'
 
@@ -29,4 +29,16 @@ test('an ask never goes to a Claude Code process that is being ended (it would f
   await runAsk(ai, ['system'], ask, (d) => (text += d), new AbortController().signal)
   assert.equal(text, 'hi')
   coolClaudeCli()
+})
+
+test("cliStatus: a CLI installed after Glint first looked is found on the next check, with PATH read again", async () => {
+  const signedIn = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'glint-claude-')), 'claude.mjs')
+  fs.writeFileSync(signedIn, "process.stdout.write(JSON.stringify({ loggedIn: true, email: 'a@b.c' }))")
+  let installed = false
+  const forgot = mock.method(platform, 'forgetShellPath', () => void (installed = true))
+  mock.method(platform, 'shellPath', async () => process.env.PATH ?? '')
+  mock.method(platform, 'cliCommand', async () => (installed ? [process.execPath, [signedIn]] : [path.join(os.tmpdir(), 'no-such-claude'), []]))
+  const s = await cliStatus('claude-cli')
+  assert.equal(s.ok, true)
+  assert.equal(forgot.mock.callCount(), 1)
 })

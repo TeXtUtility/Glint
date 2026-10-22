@@ -1,5 +1,5 @@
 import {
-  app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nativeTheme, net, powerMonitor, protocol, safeStorage,
+  app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nativeTheme, net, Notification, powerMonitor, protocol, safeStorage,
   session as electronSession, shell, screen, Tray, type IpcMainEvent, type IpcMainInvokeEvent, type MenuItemConstructorOptions,
 } from 'electron'
 import type { ChildProcess } from 'node:child_process'
@@ -195,9 +195,22 @@ function boot() {
   void readyProviders().then((ready) => {
     const order = readyFirst(getState().ai, ready)
     if (order) patchState({ ai: order })
+    if (!ready.size) noAi()
   })
   if (pendingLink) handleLink(pendingLink)
   pendingLink = null
+}
+
+/**
+ * Nothing can answer (no key, and no Claude Code or Codex signed in): said at launch, in a notification that opens
+ * Settings → AI and on the capsule, rather than by the first ask failing. The first answer that works clears it.
+ */
+function noAi() {
+  patchState({ aiFailure: 'No AI set up: add one in Settings → AI' })
+  if (!Notification.isSupported()) return
+  const n = new Notification({ title: 'Glint has no AI to answer with', body: 'Add a Claude or OpenAI key, or sign in to Claude Code or Codex. Click to open Settings → AI.' })
+  n.on('click', () => openSettings('ai'))
+  n.show()
 }
 
 /** The system prompt for an ask, in cached blocks: the mode's reference files, then the instructions. */

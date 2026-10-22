@@ -9,7 +9,7 @@ import type { Platform } from '../types'
 import * as audio from './audio'
 import * as calendar from './calendar'
 import { micUsers, openWindows } from './calls'
-import { cliCommand, shellPath } from './cli'
+import { cliCommand, forgetShellPath, shellPath } from './cli'
 import * as files from './files'
 import { requestKeys, stopKeys, watchKeys } from './keys'
 import { makeKey, preventActivation, refitGlass, setGlass } from './panel'
@@ -115,6 +115,7 @@ export const mac: Platform = {
   calendar: { ...calendar, openSettings: () => void pane('Calendars') },
   say: (text) => spawn('/usr/bin/say', ['-r', '185', text]),
   shellPath,
+  forgetShellPath,
   cliCommand,
   runInstaller(raw, ref, log, env) {
     const out = fs.openSync(log, 'w')
