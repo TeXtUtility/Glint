@@ -11,8 +11,11 @@ const commit = (() => {
   }
 })()
 
+/** Built by the release workflow for its installers, which update from releases rather than by building from source. */
+const release = process.env.GLINT_RELEASE === '1'
+
 export default defineConfig({
-  main: { plugins: [externalizeDepsPlugin()], define: { __GLINT_COMMIT__: JSON.stringify(commit) } },
+  main: { plugins: [externalizeDepsPlugin()], define: { __GLINT_COMMIT__: JSON.stringify(commit), __GLINT_RELEASE__: JSON.stringify(release) } },
   preload: { plugins: [externalizeDepsPlugin()] },
   renderer: { plugins: [react()], define: { __GLINT_COMMIT__: JSON.stringify(commit) } },
 })

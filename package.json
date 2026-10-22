@@ -1,6 +1,6 @@
 {
   "name": "glint",
-  "version": "0.16.1",
+  "version": "0.16.2",
   "license": "SEE LICENSE IN LICENSE",
   "description": "Desktop AI overlay for meetings",
   "main": "./out/main/index.js",
@@ -59,6 +59,12 @@
   },
   "build": {
     "appId": "io.github.textutility.glint",
+    "artifactName": "Glint-${version}-${arch}.${ext}",
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "artifactName": "Glint-Setup-${version}.${ext}"
+    },
     "files": [
       "out/**/*",
       "!out/**/*.map",
@@ -106,6 +112,8 @@
     ],
     "mac": {
       "files": [
+        "out/**/*",
+        "LICENSE",
         "!node_modules/onnxruntime-node/bin/napi-v*/{linux,win32}/**",
         "!node_modules/onnxruntime-node/bin/napi-v*/darwin/*/libonnxruntime.1.*.*.dylib",
         "!node_modules/unpdf/**"
@@ -128,6 +136,8 @@
       "target": "dir",
       "icon": "build/icon.png",
       "files": [
+        "out/**/*",
+        "LICENSE",
         "!node_modules/onnxruntime-node/bin/napi-v*/{linux,darwin}/**",
         "!node_modules/onnxruntime-node/bin/napi-v*/win32/arm64/**",
         "!node_modules/audiotee/bin/**"

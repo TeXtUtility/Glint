@@ -1,0 +1,88 @@
+# Installers for each release: publishing a GitHub release builds a DMG for each kind of Mac and a Windows installer,
+# and attaches them to it. Run by hand with a tag to add them to a release published earlier. A change to this file
+# builds them without releasing anything, to check the packaging.
+name: Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to build and attach installers to (e.g. v0.16.1)
+        required: true
+  push:
+    paths: [.github/workflows/release.yml]
+
+permissions:
+  contents: write # attach the installers to the release
+
+concurrency:
+  group: release-${{ github.event.release.tag_name || inputs.tag || github.ref }}
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Each on its own machine: npm installs the speech models' native libraries for the system it runs on.
+          - { os: macos-latest, target: --mac dmg --arm64 }
+          - { os: macos-15-intel, target: --mac dmg --x64 }
+          - { os: windows-latest, target: --win nsis --x64 }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag || github.ref }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: The tag is package.json's version
+        if: env.TAG != ''
+        shell: bash
+        run: |
+          version="v$(node -p "require('./package.json').version")"
+          [[ "$version" == "$TAG" ]] || { echo "::error::$TAG was tagged, but package.json says $version"; exit 1; }
+      - run: npm run build
+        env:
+          GLINT_RELEASE: '1' # updates from the release's installers, not by rebuilding from source
+      - name: Package
+        shell: bash
+        env:
+          # Optional. Without them the Mac app is signed ad hoc and the Windows installer is unsigned: both open, after
+          # a first-launch warning. With an Apple Developer ID the DMG is signed and notarized.
+          CSC_LINK: ${{ secrets.MAC_CERTIFICATE_P12_BASE64 }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          WIN_CSC_LINK: ${{ secrets.WINDOWS_CERTIFICATE_P12_BASE64 }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          sign=()
+          if [[ "$RUNNER_OS" == macOS ]]; then
+            if [[ -n "$APPLE_SIGNING_IDENTITY" ]]; then sign=(-c.mac.identity="$APPLE_SIGNING_IDENTITY" -c.mac.notarize=true)
+            else unset CSC_LINK CSC_KEY_PASSWORD; sign=(-c.mac.identity=-); fi
+          elif [[ -z "$WIN_CSC_LINK" ]]; then unset WIN_CSC_LINK WIN_CSC_KEY_PASSWORD; fi
+          npx electron-builder ${{ matrix.target }} --publish never "${sign[@]}"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: installer-${{ matrix.os }}
+          path: dist/Glint-*.*
+          if-no-files-found: error
+      - name: Attach to the release
+        if: env.TAG != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          shopt -s nullglob
+          files=(dist/Glint-*.dmg dist/Glint-*.exe)
+          gh release upload "$TAG" "${files[@]}" --clobber -R "$GITHUB_REPOSITORY"

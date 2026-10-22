@@ -10,7 +10,7 @@ import { POWERSHELL, psArgs, system32 } from '../system'
 import type { Bgr, Platform, WindowName } from '../types'
 import * as calendar from './calendar'
 import { micUsers, openWindows } from './calls'
-import { cliCommand, shellPath } from './cli'
+import { cliCommand, forgetShellPath, shellPath } from './cli'
 import { blurred, dropFocus, preventActivation, takeFocus } from './focus'
 import * as files from './files'
 import { stopKeys, watchKeys } from './keys'
@@ -83,6 +83,7 @@ export const win: Platform = {
       windowsHide: true,
     }),
   shellPath,
+  forgetShellPath,
   cliCommand,
   // A detached PowerShell gets no console and quits without running anything, so cmd starts it. cmd is in the job Node
   // ends along with Glint; PowerShell, its child, breaks away from it (libuv's job lets children's children go), so the

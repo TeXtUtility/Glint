@@ -70,3 +70,22 @@ test('installUpdate: the installer comes from the commit offered, and builds exa
   assert.equal(env.GLINT_BRANCH, 'beta')
   assert.equal(getState().update.status, 'installing')
 })
+
+test("A release install is offered the newest release's installer for its system, and Update opens its download", async (t) => {
+  initState({ updateChannel: 'beta' }) // the test before leaves an install running
+  Object.assign(globalThis, { __GLINT_RELEASE__: true })
+  t.after(() => Object.assign(globalThis, { __GLINT_RELEASE__: false }))
+  const { shell } = await import('electron')
+  const opened = mock.method(shell, 'openExternal', async () => {})
+  const sha = '9c0d1e3b5a7c9e1f2a3b4c5d6e7f804288055f2a'
+  const mine = process.platform === 'win32' ? 'Glint-Setup-9.0.0.exe' : `Glint-9.0.0-${process.arch}.dmg`
+  github((url) =>
+    url.endsWith('/releases/latest')
+      ? { tag_name: 'v9.0.0', assets: [{ name: 'Glint-9.0.0-other.dmg', browser_download_url: 'https://x/other' }, { name: mine, browser_download_url: 'https://x/mine' }] }
+      : url.endsWith('/commits/v9.0.0') ? { sha } : 404)
+  await checkForUpdate(true)
+  assert.equal(getState().update.status, 'available')
+  assert.equal(getState().update.version, '9.0.0')
+  await installUpdate()
+  assert.deepEqual(opened.mock.calls.map((c) => c.arguments[0]), ['https://x/mine'])
+})

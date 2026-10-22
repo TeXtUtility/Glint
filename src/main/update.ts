@@ -1,7 +1,8 @@
 // Updates rebuild from source: there's no signed release feed for electron-updater to use. The installer
 // (install.sh, install.ps1) downloads the offered commit, builds and copies it in, then asks Glint to quit and waits:
 // Glint quits once no session is live and its notes are written, and the installer swaps the app and reopens it.
-import { app } from 'electron'
+// A copy installed from a release's DMG or setup file is offered the next release's, to download and open.
+import { app, shell } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import { isNewer, type State } from '../shared/state'
@@ -10,6 +11,7 @@ import { getState, patchState, subscribe } from './state'
 import { platform } from './platform'
 
 declare const __GLINT_COMMIT__: string // electron.vite.config.ts; blank outside a git checkout
+declare const __GLINT_RELEASE__: boolean // electron.vite.config.ts: built by the release workflow
 
 // The repo is public, so checks are plain HTTPS to GitHub's API (60 an hour per address, unsigned in; Glint uses a
 // few), and the installer comes from raw.githubusercontent.com, like the README's install line.
@@ -77,7 +79,7 @@ export async function checkForUpdate(manual = false) {
   // Overtaken while this check ran (an install asked for or queued, or a switch to the other channel): that wins.
   const stale = () => getState().updateChannel !== channel || ['queued', 'installing', 'ready'].includes(getState().update.status)
   try {
-    const offer = channel === 'beta' ? await betaUpdate() : await stableUpdate()
+    const offer = __GLINT_RELEASE__ ? await releaseUpdate() : channel === 'beta' ? await betaUpdate() : await stableUpdate()
     if (stale()) return
     if (offer) {
       const { commit, ...shown } = offer
@@ -123,6 +125,25 @@ async function stableUpdate(): Promise<Offer | null> {
   return (await compare(head, __GLINT_COMMIT__)).ahead ? { version: latest, channel: 'stable', commit: head } : null
 }
 
+/** The installer a release attaches for this system (see .github/workflows/release.yml). */
+const PACKAGE = process.platform === 'win32' ? /^Glint-Setup-.+\.exe$/ : new RegExp(`^Glint-.+-${process.arch}\\.dmg$`)
+/** Where the offered release's installer downloads from. */
+let offeredDownload = ''
+
+/**
+ * Installed from a release: the newest release with an installer for this system, whatever the channel (beta has no
+ * releases). ponytail: Update downloads it in the browser to run by hand; electron-updater could swap it in place once
+ * the Mac build is signed with a Developer ID, which Squirrel needs.
+ */
+async function releaseUpdate(): Promise<Offer | null> {
+  const r = await github<{ tag_name: string; assets: { name: string; browser_download_url: string }[] }>(`${API}/releases/latest`)
+  const version = r.tag_name.replace(/^v/, '')
+  const asset = r.assets.find((a) => PACKAGE.test(a.name))
+  if (!asset || !isNewer(version, app.getVersion())) return null
+  offeredDownload = asset.browser_download_url
+  return { version, channel: 'stable', commit: await headOf(r.tag_name) }
+}
+
 /** Beta builds don't bump the version: any commit on the beta branch that this build lacks is an update. */
 async function betaUpdate(): Promise<Offer | null> {
   if (!__GLINT_COMMIT__) {
@@ -138,6 +159,7 @@ export async function installUpdate() {
   const s = getState()
   if (s.update.status === 'installing' || s.update.status === 'ready') return
   const { version, channel, commits } = s.update
+  if (__GLINT_RELEASE__) return void shell.openExternal(offeredDownload) // nothing builds, so no need to wait for a session
   const branch = channel === 'beta' ? BRANCH.beta : BRANCH.stable
   const offer = { version, channel, commits }
   // Building takes a minute or two of full CPU, which would compete with the call: during a session it waits.

@@ -108,6 +108,8 @@ export interface Platform {
   say(text: string): ChildProcess
   /** PATH for the CLIs Glint runs, as the user's own shell has it. */
   shellPath(): Promise<string>
+  /** Reads PATH afresh next time: a command wasn't found, and may have been installed since. */
+  forgetShellPath(): void
   /** A CLI's program and leading arguments. */
   cliCommand(name: string, PATH: string): Promise<[string, string[]]>
   /** Starts the installer for `ref` (a commit or branch) from GitHub, output in `log`. It outlives Glint quitting for it. */

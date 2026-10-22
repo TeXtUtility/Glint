@@ -37,6 +37,7 @@ export const safeStorage = {
 export const shell = {
   trashItem: async (p: string) => fs.rmSync(p),
   openPath: async () => '',
+  openExternal: async () => {},
 }
 
 export const dialog = { showOpenDialog: async () => ({ canceled: true, filePaths: [] as string[] }) }

@@ -1,5 +1,5 @@
 import {
-  app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nativeTheme, net, powerMonitor, protocol, safeStorage,
+  app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nativeTheme, net, Notification, powerMonitor, protocol, safeStorage,
   session as electronSession, shell, screen, Tray, type IpcMainEvent, type IpcMainInvokeEvent, type MenuItemConstructorOptions,
 } from 'electron'
 import type { ChildProcess } from 'node:child_process'
@@ -13,7 +13,8 @@ import { NAME_GUESS_SYSTEM_PROMPT, nameGuessContext, nameGuessQuestion, parseNam
 import { transcriptText } from '../shared/history'
 import { HUMANIZER_LABELS, HUMANIZERS, humanizes, type HumanizerConfig, type HumanizerService } from '../shared/humanize'
 import { scrub } from '../shared/markdown'
-import { askWithFallbacks, cliStatus, complete, coolClaudeCli, keyStatus, removeLeftoverTemp, setKey, statusOf, warmCache, warmClaudeCli } from './ai'
+import { askWithFallbacks, cliStatus, complete, coolClaudeCli, keyStatus, readyProviders, removeLeftoverTemp, setKey, statusOf, warmCache, warmClaudeCli } from './ai'
+import { readyFirst } from '../shared/providers'
 import { addModeFiles, passagesFor, prepareSearch, referenceFor, removeModeFile, sweepModeFiles } from './files'
 import { bugReport, initLog, logTail, setVerbose, verbose } from './log'
 import { modelUsage, removeUnusedModels, sweepModels } from './models'
@@ -190,8 +191,26 @@ function boot() {
   buildAppMenu()
   registerIpc()
   booted = true
+  // The first ask goes to a provider that can answer it: ones not set up move below the ones that are.
+  void readyProviders().then((ready) => {
+    const order = readyFirst(getState().ai, ready)
+    if (order) patchState({ ai: order })
+    if (!ready.size) noAi()
+  })
   if (pendingLink) handleLink(pendingLink)
   pendingLink = null
+}
+
+/**
+ * Nothing can answer (no key, and no Claude Code or Codex signed in): said at launch, in a notification that opens
+ * Settings → AI and on the capsule, rather than by the first ask failing. The first answer that works clears it.
+ */
+function noAi() {
+  patchState({ aiFailure: 'No AI set up: add one in Settings → AI' })
+  if (!Notification.isSupported()) return
+  const n = new Notification({ title: 'Glint has no AI to answer with', body: 'Add a Claude or OpenAI key, or sign in to Claude Code or Codex. Click to open Settings → AI.' })
+  n.on('click', () => openSettings('ai'))
+  n.show()
 }
 
 /** The system prompt for an ask, in cached blocks: the mode's reference files, then the instructions. */
