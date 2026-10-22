@@ -1,29 +1,54 @@
-# Installers for each release: publishing a GitHub release builds a DMG for each kind of Mac and a Windows installer,
-# and attaches them to it. Run by hand with a tag to add them to a release published earlier. A change to this file
-# builds them without releasing anything, to check the packaging.
+# Releases make themselves: when main gets a version that has no GitHub release yet (a "Release x.y.z" commit), this
+# builds a DMG for each kind of Mac and a Windows setup file, then publishes the release, tagged on that commit, with
+# the version's changelog section as its notes. Run by hand with a tag to rebuild that release's installers.
 name: Release
 
 on:
-  release:
-    types: [published]
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       tag:
-        description: Release tag to build and attach installers to (e.g. v0.16.1)
+        description: Release tag whose installers to rebuild (e.g. v0.16.2)
         required: true
-  push:
-    paths: [.github/workflows/release.yml]
 
 permissions:
-  contents: write # attach the installers to the release
+  contents: write # create the release and attach the installers
 
 concurrency:
-  group: release-${{ github.event.release.tag_name || inputs.tag || github.ref }}
+  group: release-${{ inputs.tag || github.sha }}
 
 jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.v.outputs.tag }}
+      build: ${{ steps.v.outputs.build }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.sha }}
+      - id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          tag="v$(node -p "require('./package.json').version")"
+          if [[ -n "$INPUT_TAG" ]]; then
+            [[ "$INPUT_TAG" == "$tag" ]] || { echo "::error::$INPUT_TAG is tagged, but its package.json says $tag"; exit 1; }
+            build=true
+          elif gh release view "$tag" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            build=false # released already: this push didn't change the version
+          else
+            build=true
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+
   package:
+    needs: version
+    if: needs.version.outputs.build == 'true'
     strategy:
-      fail-fast: false
       matrix:
         include:
           # Each on its own machine: npm installs the speech models' native libraries for the system it runs on.
@@ -32,23 +57,15 @@ jobs:
           - { os: windows-latest, target: --win nsis --x64 }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
-    env:
-      TAG: ${{ github.event.release.tag_name || inputs.tag }}
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.release.tag_name || inputs.tag || github.ref }}
+          ref: ${{ inputs.tag || github.sha }}
       - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
       - run: npm ci --no-audit --no-fund
-      - name: The tag is package.json's version
-        if: env.TAG != ''
-        shell: bash
-        run: |
-          version="v$(node -p "require('./package.json').version")"
-          [[ "$version" == "$TAG" ]] || { echo "::error::$TAG was tagged, but package.json says $version"; exit 1; }
       - run: npm run build
         env:
           GLINT_RELEASE: '1' # updates from the release's installers, not by rebuilding from source
@@ -75,14 +92,33 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: installer-${{ matrix.os }}
-          path: dist/Glint-*.*
+          path: |
+            dist/Glint-*.dmg
+            dist/Glint-*.exe
           if-no-files-found: error
-      - name: Attach to the release
-        if: env.TAG != ''
-        shell: bash
-        env:
+
+  # Only once every installer is built, so a release never appears with some missing.
+  publish:
+    needs: [version, package]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.sha }}
+      - uses: actions/download-artifact@v7
+        with:
+          path: installers
+          merge-multiple: true
+      - env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
         run: |
-          shopt -s nullglob
-          files=(dist/Glint-*.dmg dist/Glint-*.exe)
-          gh release upload "$TAG" "${files[@]}" --clobber -R "$GITHUB_REPOSITORY"
+          version="${TAG#v}"
+          # The changelog's section for this version, without its heading.
+          awk -v h="## $version " 'index($0, h) == 1 { on = 1; next } /^## / { on = 0 } on' CHANGELOG.md > notes.md
+          [[ -s notes.md ]] || echo "Glint $version" > notes.md
+          if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" installers/* --clobber -R "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" installers/* --target "$GITHUB_SHA" --title "Glint $version" --notes-file notes.md -R "$GITHUB_REPOSITORY"
+          fi

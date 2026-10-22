@@ -1,3 +1,7 @@
+## Unreleased
+
+- **Releases publish themselves.** A new version on main gets its GitHub release automatically, with its changelog notes and the Mac and Windows installers attached.
+
 ## 0.16.2 (2026-10-22)
 
 - **Claude Code installed after Glint is found.** Glint looks in the folder Claude Code's installer uses, and reads your PATH again whenever a command isn't found, so a CLI installed while Glint was running works without restarting it. Settings → AI's status check tries again straight away.
