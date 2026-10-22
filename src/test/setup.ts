@@ -3,7 +3,7 @@
 // the bundler allows) to their .ts files, and the build-time commit is defined.
 import { registerHooks } from 'node:module'
 
-Object.assign(globalThis, { __GLINT_COMMIT__: '' })
+Object.assign(globalThis, { __GLINT_COMMIT__: '', __GLINT_RELEASE__: false })
 
 const fake = (file: string) => new URL(file, import.meta.url).href
 

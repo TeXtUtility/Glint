@@ -1,5 +1,6 @@
 ## Unreleased
 
+- **Installers.** Each release on GitHub now comes with a DMG for Apple silicon and Intel Macs and a Windows setup file, so installing no longer needs Terminal or PowerShell. A copy installed from one is offered the next release's installer when it's out. The one-line install still works and still updates by building from source.
 - **Search the web.** Settings → AI → Search the web lets the AI look things up when an answer needs current facts, on every provider: Claude and OpenAI keys, Claude Code and Codex. Chat answers end with their sources; Glance and Ghost show only the answer. Notes, follow-ups and name guesses never search, and on OpenAI and Codex, which can open pages, neither do Glance's automatic answers, so something said in a call can't send the AI to a page.
 - **License.** Glint is MIT with the Commons Clause: free to use anywhere and to change and share, but not to sell. CONTRIBUTING.md and community terms are new.
 - **Guess reads any calendar.** Settings → Voice → Calendar link takes a calendar's private iCal address (Google, new Outlook, Outlook.com, iCloud), so Guess finds the invite in calendars the OS won't let Glint read, on a Mac or on Windows. It's read only when you press Guess, and saved encrypted like an API key. Repeating meetings, moved and skipped ones, and Outlook's time zones all come through.
