@@ -1,4 +1,4 @@
-## Unreleased
+## 0.16.2 (2026-10-22)
 
 - **Claude Code installed after Glint is found.** Glint looks in the folder Claude Code's installer uses, and reads your PATH again whenever a command isn't found, so a CLI installed while Glint was running works without restarting it. Settings → AI's status check tries again straight away.
 - **No AI, told at launch.** If no provider can answer (no key, and Claude Code and Codex aren't signed in), Glint says so when it opens: a notification that opens Settings → AI, and a red line on the capsule, instead of the first ask failing.
