@@ -1,6 +1,6 @@
 {
   "name": "glint",
-  "version": "0.16.2",
+  "version": "0.16.3",
   "license": "SEE LICENSE IN LICENSE",
   "description": "Desktop AI overlay for meetings",
   "main": "./out/main/index.js",
