@@ -1,7 +1,8 @@
 // Glint on macOS.
 import { app, desktopCapturer, dialog, shell, systemPreferences } from 'electron'
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
+import path from 'node:path'
 import { nativeAccelerator } from '../../../shared/state'
 import { flushState, getState, patchState } from '../../state'
 import { mediaAccess } from '../media'
@@ -16,6 +17,21 @@ import { makeKey, preventActivation, refitGlass, setGlass } from './panel'
 import { runInTerminal, terminals } from './terminal'
 
 const pane = (name: string) => shell.openExternal(`x-apple.systempreferences:com.apple.preference.security?Privacy_${name}`)
+
+/**
+ * A grant made for another build of Glint stays in System Settings, switched on, but no longer applies: macOS ties it
+ * to the code signature, which each installer build signs anew, and it won't ask again while the entry is there.
+ * Asking clears Glint's own entries first, once per launch, so a grant that's only waiting for a restart is kept.
+ */
+const cleared = new Set<string>()
+function clearStale(...services: string[]) {
+  const plist = path.join(path.dirname(app.getPath('exe')), '..', 'Info.plist')
+  const id = /<key>CFBundleIdentifier<\/key>\s*<string>([^<]+)</.exec(fs.readFileSync(plist, 'utf8'))?.[1]
+  for (const s of services.filter((x) => !cleared.has(x))) {
+    cleared.add(s)
+    if (id) spawnSync('/usr/bin/tccutil', ['reset', s, id], { timeout: 5000 })
+  }
+}
 
 /** Offered once: running from Downloads or a disk image breaks permissions and updates. Moving relaunches. */
 function offerToMove() {
@@ -93,9 +109,11 @@ export const mac: Platform = {
 
   permissions: () => ({ mic: mediaAccess('microphone'), screen: mediaAccess('screen') }),
   async requestPermission(kind) {
+    if (kind === 'mic' && systemPreferences.getMediaAccessStatus('microphone') === 'denied') clearStale('Microphone')
     if (kind === 'mic' && systemPreferences.getMediaAccessStatus('microphone') === 'not-determined') {
       await systemPreferences.askForMediaAccess('microphone')
     } else if (kind === 'screen') {
+      if (systemPreferences.getMediaAccessStatus('screen') !== 'granted') clearStale('ScreenCapture', 'AudioCapture')
       // A throwaway capture registers the app in the Screen Recording list and triggers the prompt.
       await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1, height: 1 } }).catch(() => {})
       if (systemPreferences.getMediaAccessStatus('screen') !== 'granted') await pane('ScreenCapture')

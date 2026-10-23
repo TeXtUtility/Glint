@@ -1,5 +1,6 @@
 ## Unreleased
 
+- **Reinstalling no longer locks setup.** A Mac grant made for an earlier copy of Glint stays switched on in System Settings but stops applying, so setup waited for a permission it couldn't get. Asking for Screen Recording or the microphone now clears Glint's old entry first, so macOS asks again.
 - **Setup picks your AI.** A new AI step after Permissions shows Claude Code, Codex and the Claude and OpenAI APIs: subscriptions that are signed in are ready at once, with the commands to install or sign in when not, and API keys are pasted and saved right there. Continue puts the ready ones first, so the practice call's first answer works.
 - **Releases publish themselves.** A new version on main gets its GitHub release automatically, with its changelog notes and the Mac and Windows installers attached. The installers keep the same names, Glint-arm64.dmg, Glint-x64.dmg and Glint-Setup.exe, so a link to the latest release's always gets the newest.
 
