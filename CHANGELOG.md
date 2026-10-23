@@ -1,3 +1,6 @@
+## Unreleased
+
+- **A DMG that shows the way.** The Mac installer opens on a background with an arrow from Glint to Applications, and how to get past macOS's first-launch warning: System Settings, Privacy & Security, Open Anyway.
 ## 0.16.3 (2026-10-23)
 
 - **Reinstalling no longer locks setup.** A Mac grant made for an earlier copy of Glint stays switched on in System Settings but stops applying, so setup waited for a permission it couldn't get. Asking for Screen Recording or the microphone now clears Glint's old entry first, so macOS asks again.
