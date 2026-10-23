@@ -1,6 +1,6 @@
 {
   "name": "glint",
-  "version": "0.16.3",
+  "version": "0.16.4",
   "license": "SEE LICENSE IN LICENSE",
   "description": "Desktop AI overlay for meetings",
   "main": "./out/main/index.js",
@@ -62,11 +62,22 @@
     "artifactName": "Glint-${arch}.${ext}",
     "dmg": {
       "background": "build/dmg-background.tiff",
-      "window": { "width": 600, "height": 388 },
+      "window": {
+        "width": 600,
+        "height": 388
+      },
       "iconSize": 96,
       "contents": [
-        { "x": 150, "y": 130 },
-        { "x": 450, "y": 130, "type": "link", "path": "/Applications" }
+        {
+          "x": 150,
+          "y": 130
+        },
+        {
+          "x": 450,
+          "y": 130,
+          "type": "link",
+          "path": "/Applications"
+        }
       ]
     },
     "nsis": {
