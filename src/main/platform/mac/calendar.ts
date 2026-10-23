@@ -5,7 +5,8 @@ import type { CalendarAccess } from '../types'
 
 const SCRIPT = `ObjC.import('EventKit')
 function run(argv) {
-  const status = $.EKEventStore.authorizationStatusForEntityType(0) // EKEntityTypeEvent
+  // EKEntityTypeEvent. The bridge hands the status over as a string ("0"), so it's made a number before comparing.
+  const status = Number($.EKEventStore.authorizationStatusForEntityType(0))
   // 3: full access. 0: not asked yet. 1, 2 and 4 (restricted, denied, add only): no reading.
   const access = status === 3 ? 'granted' : status === 0 ? 'ask' : 'denied'
   if (argv[0] === 'status') return access
@@ -13,13 +14,13 @@ function run(argv) {
   if (argv[0] === 'request') {
     if (access !== 'ask') return access
     let done = false
-    let ok = false
-    const answer = (granted) => ((ok = granted), (done = true))
+    const answer = () => (done = true)
     if (store.respondsToSelector('requestFullAccessToEventsWithCompletion:')) store.requestFullAccessToEventsWithCompletion(answer)
     else store.requestAccessToEntityTypeCompletion(0, answer)
     const until = Date.now() + 120000
     while (!done && Date.now() < until) $.NSRunLoop.currentRunLoop.runUntilDate($.NSDate.dateWithTimeIntervalSinceNow(0.2))
-    return ok ? 'granted' : 'denied'
+    // The status after answering, rather than the callback's flag, which the bridge may hand over as an object.
+    return Number($.EKEventStore.authorizationStatusForEntityType(0)) === 3 ? 'granted' : 'denied'
   }
   if (access !== 'granted') return '[]'
   const at = Number(argv[1])

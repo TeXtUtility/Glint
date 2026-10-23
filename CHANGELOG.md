@@ -1,6 +1,6 @@
 ## Unreleased
 
-- **Calendar access asks again after a reinstall.** A calendar grant left by an earlier copy of Glint read as denied, and System Settings had no Glint entry to turn on. Allowing it now clears that entry first, so macOS asks. Calendar errors are logged instead of passing for a denial.
+- **Calendar access works on a Mac.** Glint read the calendar permission as denied even before it had asked, so macOS never showed its prompt and System Settings had no Glint entry to turn on. It now asks, and Guess can read the invite. Calendar errors are logged instead of passing for a denial.
 - **A DMG that shows the way.** The Mac installer opens on a background with an arrow from Glint to Applications, and how to get past macOS's first-launch warning: System Settings, Privacy & Security, Open Anyway.
 
 ## 0.16.3 (2026-10-23)

@@ -130,15 +130,7 @@ export const mac: Platform = {
   terminals,
   runInTerminal,
   files,
-  calendar: {
-    ...calendar,
-    // Denied with no entry to switch on in System Settings is a grant left by another build of Glint: cleared, it asks.
-    async request() {
-      if ((await calendar.access()) === 'denied') clearStale('Calendar')
-      return calendar.request()
-    },
-    openSettings: () => void pane('Calendars'),
-  },
+  calendar: { ...calendar, openSettings: () => void pane('Calendars') },
   say: (text) => spawn('/usr/bin/say', ['-r', '185', text]),
   shellPath,
   forgetShellPath,
