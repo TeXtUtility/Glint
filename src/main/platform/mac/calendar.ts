@@ -43,7 +43,10 @@ function run(argv) {
 
 function script(args: string[], timeout: number): Promise<string> {
   return new Promise((resolve, reject) =>
-    execFile('/usr/bin/osascript', ['-l', 'JavaScript', '-e', SCRIPT, ...args], { timeout }, (err, stdout) => (err ? reject(err) : resolve(stdout.trim()))),
+    execFile('/usr/bin/osascript', ['-l', 'JavaScript', '-e', SCRIPT, ...args], { timeout }, (err, stdout, stderr) => {
+      if (err) console.warn(`[calendar] ${args[0]} failed:`, stderr.trim() || err.message) // read as no access, but not silently
+      return err ? reject(err) : resolve(stdout.trim())
+    }),
   )
 }
 
