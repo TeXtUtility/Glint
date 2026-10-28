@@ -1,21 +1,35 @@
-## Unreleased
+## 0.17.0 (2026-10-28)
 
-- **A new setup that shows what Glint does.** It starts by asking what you'll use Glint for first (sales calls, team meetings, hiring interviews, lectures, or something else) and turns on the matching mode. Then a one-minute practice call made for that choice: two voices, big captions so it works with the sound off, and a sheet on screen to answer from. You press ⌘↩ when you're asked something, see what a screen share sees (Glint isn't in it), hide and bring back Glint with ⌘\, and the call ends with its notes and follow-up email. Next you make the mode yours (its name, what Glint should know, files to answer from), or write one from scratch. Last, you ask Glint anything with no call at all, then a hard question with smart mode. "I've used Glint before" skips straight to the app.
-- **The practice call records nothing.** Its lines go straight into the transcript as they're spoken, so it works before the speech model is downloaded, without screen recording, and with no AI yet (it shows a marked sample answer).
-- **Permissions can wait.** Setup's permissions screen has Skip for now, and a live mic meter once the mic is allowed.
-- **Setup finds your AI.** A signed-in Claude Code or Codex is named and used without anything to set up. The install commands moved under "For developers".
-- **New installs start with a smaller capsule**: activity, mode, session, chat and Ask. The rest waits in Meeting options.
-- The "No AI set up" alarm waits until setup is done.
-- **Web search you can see.** A globe beside the chat box turns it on and off. While an answer searches, its header says what it's looking up ("Searching “iPhone 18 release date”"), then "Searched the web", and the sources show as links under the answer instead of a line of text, for answers saved before too. Claude Code and both APIs show each search as it happens; Codex shows the sources when it's done.
-- **Faster, cheaper searches.** Fast answers search at most twice and read fewer pages per search (Codex uses OpenAI's cached index); smart mode digs further and reads pages live. The AI is told to use one short query and only search again when it must.
-- **Search that can't run doesn't stop the answer.** If an API key's organization doesn't allow web search, the answer comes without it, with a note saying so, and Glint stops asking that key to search until it restarts. A search that fails mid-answer is noted the same way.
+A new setup that shows what Glint does, smart mode and web search you can see, and notes that come with their email.
+
+### Setup
+- **A new setup that starts with what you'll use Glint for first**: sales calls, team meetings, hiring interviews, lectures, or something else. Your pick turns on the matching mode and chooses the practice call.
+- **A one-minute practice call** made for that pick: two voices, big captions so it works with the sound off, and a sheet on screen to answer from. You press ⌘↩ when you're asked something, see what a screen share sees (Glint isn't in it), hide and bring back Glint with ⌘\, and the call ends with its notes and follow-up email. It records nothing, so it works before the speech model is downloaded, without screen recording, and with no AI yet (a marked sample answer).
+- **Make the mode yours**: its name, what Glint should know, and files to answer from. Or write one from scratch.
+- **Ask anything, no call needed**: a question about your screen, then a hard one with smart mode.
+- **Permissions can wait.** Skip for now carries on without them, and a live meter shows the mic hears you.
+- **Setup finds your AI.** A signed-in Claude Code or Codex is used with nothing to set up; the install commands moved under "For developers". The "No AI set up" alarm waits until setup is done.
+- "I've used Glint before" skips straight to the app. The speech model's download shows on every screen.
+
+### Getting started
+- **A checklist** of what you've tried (a practice call, an answer, smart mode, your own mode, a real call, naming a speaker, Glance) sits at the top of History and in the menu bar until it's done.
+- **One tip at a time** under the capsule, when it's useful and at most one a session: ⌘↩ on your first call, Glance on the second, files for your mode on the third, smart mode, naming voices, room mode. A tip's control moves onto the capsule if it was in Meeting options.
+- **Hide both** from History, the menu bar or setup's last screen; Settings → General brings them back, and Show me how there lists every tip.
+- **New installs start with a smaller capsule**: activity, mode, session, chat and Ask. The rest waits in Meeting options. Existing layouts are kept.
+
+### Smart mode and web search
 - **Smart mode, front and centre.** ⌥⌘↩ turns it on and off from any app, setup teaches the bulb beside the chat box, and a tip suggests it on your third question in a call.
-- **Getting started.** A checklist of what you've tried (a practice call, an answer, smart mode, your own mode, a real call, naming a speaker, Glance) sits at the top of History and in the menu bar until it's done. Hide it there, or in Settings → General, which also turns tips off.
-- **One tip at a time.** After setup, Glint shows a one-line tip under the capsule when it's useful, at most one a session: ⌘↩ on your first call, Glance on the second, files for your mode on the third, smart mode, naming voices, room mode. A tip's control moves onto the capsule if it was in Meeting options. Settings → General → Show me how lists them all.
-- The practice call is tagged Practice in History, and setup's last question, "How easy was that?", goes into bug reports with when each first happened. Nothing is sent anywhere unless you send a report.
+- **Web search you can see.** A globe beside the chat box turns it on and off. While an answer searches, its header shows what it's looking up, then "Searched the web", and the sources are links under the answer, for answers saved before too. Codex shows its sources when it's done.
+- **Faster, cheaper searches.** Fast answers search at most twice and read fewer pages per search (Codex uses OpenAI's cached index); smart mode digs further and reads pages live.
+- **A search that can't run doesn't stop the answer.** If an API key's organization doesn't allow web search, the answer comes without it, with a note, and that key isn't asked to search again until Glint restarts. A search that fails mid-answer is noted the same way.
 
-- **The follow-up email drafts itself.** As soon as a call's notes are written, the email is too, ready to send. Settings → Notes and email turns that off.
-- **Your own instructions for notes and email.** Settings → Notes and email shows the instructions the notes and the follow-up email are written from, to change as you like; Glint keeps the reply format itself. Prompt, next to a session's summary, opens them, and Regenerate writes the notes and the email again.
+### After the call
+- **The follow-up email drafts itself** as soon as the notes are written. Settings → Notes and email turns that off.
+- **Your own instructions for notes and email.** Settings → Notes and email shows what they're written from, to change as you like; Glint keeps the reply format itself. Prompt, next to a session's summary, opens them, and Regenerate writes the notes and email again.
+- The practice call is tagged Practice in History.
+
+### Bug reports
+- Setup's last question, "How easy was that?", and when each feature was first used go into bug reports. Nothing is sent anywhere unless you send a report.
 
 ## 0.16.4 (2026-10-23)
 
