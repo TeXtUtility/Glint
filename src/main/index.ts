@@ -13,7 +13,7 @@ import { NAME_GUESS_SYSTEM_PROMPT, nameGuessContext, nameGuessQuestion, parseNam
 import { transcriptText } from '../shared/history'
 import { HUMANIZER_LABELS, HUMANIZERS, humanizes, type HumanizerConfig, type HumanizerService } from '../shared/humanize'
 import { scrub } from '../shared/markdown'
-import { askWithFallbacks, cliStatus, complete, coolClaudeCli, keyStatus, readyProviders, removeLeftoverTemp, setKey, statusOf, warmCache, warmClaudeCli } from './ai'
+import { askWithFallbacks, cliStatus, webEvents, type WebEvent, complete, coolClaudeCli, keyStatus, readyProviders, removeLeftoverTemp, setKey, statusOf, warmCache, warmClaudeCli } from './ai'
 import { readyFirst } from '../shared/providers'
 import { checklistLeft, CHECKLIST, tipAtStart, TIPS, type First, type TipId } from '../shared/tips'
 import { addModeFiles, passagesFor, prepareSearch, referenceFor, removeModeFile, sweepModeFiles } from './files'
@@ -581,6 +581,9 @@ function registerIpc() {
     let answeredBy: string = ai.provider
     let tokens = ''
     let searched = ''
+    let webSearches = 0
+    const onWeb = (ev: WebEvent) => (send('ai:web', { id: p.id, ...ev }), 'search' in ev && ev.search && webSearches++)
+    webEvents.on(p.id, onWeb)
     try {
       // A practice call with no AI set up yet (setup's "Set it up later"): its sample answer, rather than a failure.
       const practice = getState().session?.practice
@@ -636,8 +639,9 @@ function registerIpc() {
       outcome = `error: ${(err as Error).message}`
       throw err
     } finally {
+      webEvents.off(p.id, onWeb)
       if (asks.get(p.id) === ctrl) asks.delete(p.id)
-      console.log(`[ask] ${answeredBy} screenshot=${!!p.screenshot}${searched} first-text=${firstMs ? `${firstMs}ms` : 'none'} total=${Date.now() - t0}ms${tokens} ${outcome}`)
+      console.log(`[ask] ${answeredBy} screenshot=${!!p.screenshot}${searched}${webSearches ? ` web=${webSearches}` : ''} first-text=${firstMs ? `${firstMs}ms` : 'none'} total=${Date.now() - t0}ms${tokens} ${outcome}`)
     }
   })
   on('ai:cancel', (_e, id: string) => asks.get(id)?.abort())

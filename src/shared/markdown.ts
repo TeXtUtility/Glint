@@ -251,3 +251,13 @@ export function normalizeMath(md: string): string {
     )
     .join('')
 }
+
+/**
+ * An answer's closing "Sources: [title](url), …" line (added after a web search), split off so it can show as links
+ * under the answer. Anything else, including a Sources line mid-answer, stays in `body`.
+ */
+export function splitSources(md: string): { body: string; sources: { title: string; url: string }[] } {
+  const m = /\n[ \t]*\**Sources:?\**:?[ \t]*(\[[^\n]*)\s*$/.exec(md)
+  const sources = m ? [...m[1].matchAll(/\[([^\]]*)\]\((https?:\/\/[^)\s]+)\)/g)].map(([, title, url]) => ({ title: title.trim() || url, url })) : []
+  return sources.length ? { body: md.slice(0, m!.index).trimEnd(), sources } : { body: md, sources: [] }
+}

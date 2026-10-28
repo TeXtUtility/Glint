@@ -1,7 +1,7 @@
 import { memo, useEffect, useLayoutEffect, useReducer, useRef, useState, type RefObject } from 'react'
 import { chatHistory, lastInstruction, lineLabel, type SavedMessage, type SavedSession } from '../../shared/history'
 import { HUMANIZER_LABELS, humanizes, type HumanizeStatus, type HumanizerService } from '../../shared/humanize'
-import { copyText, scrub, wholeSentences } from '../../shared/markdown'
+import { copyText, scrub, splitSources, wholeSentences } from '../../shared/markdown'
 import { autoAsk, composeNote, isRetry, lineKey, unsentLines, userPrompt } from '../../shared/prompt'
 import {
   askEffort, formatElapsed, INACTIVITY_COUNTDOWN_S, INACTIVITY_MS, prettyAccelerator, type AiProvider, type State, type TranscriptItem,
@@ -53,6 +53,8 @@ interface Msg extends SavedMessage {
   smart?: boolean
   startedAt?: number
   firstAt?: number
+  /** Replies that searched the web: each query as it's known, and why search couldn't run, if it couldn't. */
+  web?: { queries: string[]; error?: string }
   /** Replies sent to the humanizer: where the rewrite stands. The text stays hidden until it's back. */
   hz?: HumanizeStatus
   /** The model's own text is shown in place of the rewrite. */
@@ -196,6 +198,18 @@ export function ChatPanel() {
     const offHumanizing = glint.on('ai:humanizing', (d: { id: string; service: HumanizerService }) => {
       if (d.id === id) setMsgs((m) => m.map((x) => (x.id === replyId ? { ...x, hz: { service: d.service, stage: 'humanizing', ghost: typeable } } : x)))
     })
+    const offWeb = glint.on('ai:web', (d: { id: string; search?: string; error?: string }) => {
+      if (d.id !== id) return
+      setMsgs((m) => m.map((x) => {
+        if (x.id !== replyId) return x
+        const w = x.web ?? { queries: [] }
+        // A search starting adds a blank; its query fills that in once known.
+        const queries = d.search === undefined ? w.queries
+          : d.search && w.queries.at(-1) === '' ? [...w.queries.slice(0, -1), d.search]
+          : d.search && w.queries.includes(d.search) ? w.queries : [...w.queries, d.search]
+        return { ...x, web: { queries, error: d.error ?? w.error } }
+      }))
+    })
     const offSearched = glint.on('ai:searched', (d: { id: string } & NonNullable<Msg['searched']>) => {
       if (d.id === id) setMsgs((m) => m.map((x) => (x.id === id ? { ...x, searched: { count: d.count, pages: d.pages, text: d.text } } : x)))
     })
@@ -252,6 +266,7 @@ export function ChatPanel() {
       offSwitch()
       offHumanizing()
       offSearched()
+      offWeb()
       ctrl.signal.removeEventListener('abort', cancel)
       const stopped = ctrl.signal.aborted
       // Stopped or failed before the rewrite came back: what the model wrote shows, as a reply without one would.
@@ -640,6 +655,11 @@ export function ChatPanel() {
           onClick={chat.isStreaming ? stop : () => void ask()}>
           <span key={chat.isStreaming ? 'stop' : 'send'} className="swap">{chat.isStreaming ? <i className="stop-square" /> : <Icon name="arrowUp" size={16} />}</span>
         </button>
+        <button className={`circle toggle globe ${s.ai.webSearch ? 'on' : ''}`} aria-label="Search the web" aria-pressed={s.ai.webSearch}
+          data-tip={s.ai.webSearch ? 'Web search on: looks things up when an answer needs current facts, and shows its sources' : 'Web search off: answers from what the AI knows'}
+          onClick={() => patch({ ai: { ...s.ai, webSearch: !s.ai.webSearch } })}>
+          <Icon name="globe" />
+        </button>
         <button className={`circle toggle bulb ${s.smart ? 'on' : ''} ${s.teach === 'smart' && !s.smart ? 'teach' : ''}`} aria-label="Smart mode" aria-pressed={s.smart}
           data-tip={s.smart ? 'Smart mode on: thinks it through and answers thoroughly (slower)' : 'Smart mode off: fast answers'}
           onClick={() => patch({ smart: !s.smart })}>
@@ -751,7 +771,8 @@ function Thread({ msgs, discreet, setOriginal }: { msgs: Msg[]; discreet: boolea
               {m.hz?.stage === 'failed' && (
                 <div className="fail-note" role="alert"><Icon name="person" size={12} /> <b>{HUMANIZER_LABELS[m.hz.service]} failed:</b> {m.hz.note}. Showing the original.</div>
               )}
-              {m.text ? <Markdown text={discreet && !m.done ? wholeSentences(shownText(m)) : shownText(m)} streaming={!m.done} /> : m.failed ? <b className="error">No answer: the AI failed.</b>
+              {m.web?.error && <div className="web-note"><Icon name="globe" size={12} /> {m.web.error}</div>}
+              {m.text ? <ReplyBody text={discreet && !m.done ? wholeSentences(shownText(m)) : shownText(m)} streaming={!m.done} /> : m.failed ? <b className="error">No answer: the AI failed.</b>
                 : m.stopped ? <em className="muted">Stopped.</em>
                 : m.done ? <em className="muted">Nothing to add.</em> : <span className="caret" />}
               {m.text && m.stopped && !m.hz && <em className="muted"> (stopped)</em>}
@@ -799,12 +820,39 @@ function ReplyHead({ m, onToggle }: { m: Msg; onToggle: () => void }) {
     : !m.done ? 'answering'
     : m.smart && m.firstAt ? `smart · thought for ${secs(m.firstAt)} s` : null
   if (!who) return null
+  // The web part: what it's searching for while it does, then how many searches it took.
+  const q = m.web?.queries ?? []
+  const searching = !!q.length && !m.firstAt && !m.done
   return (
     <div className="reply-head">
       <Icon name={m.smart ? 'bulb' : 'logo'} size={m.smart ? 14 : 13} filled={m.smart} />
-      {[m.model ?? PROVIDER_LABELS[who], status].filter(Boolean).join(' · ')}
+      {[m.model ?? PROVIDER_LABELS[who], searching ? null : status].filter(Boolean).join(' · ')}
+      {!!q.length && (
+        <span className={`web-chip ${searching ? 'on' : ''}`} data-tip={q.filter(Boolean).map((x) => `“${x}”`).join(', ') || undefined}>
+          <Icon name="globe" size={12} />
+          {searching ? (q.at(-1) ? `Searching “${q.at(-1)}”` : 'Searching the web…') : `Searched the web${q.length > 1 ? ` ${q.length}×` : ''}`}
+        </span>
+      )}
       {m.hz?.stage === 'replying' && <span className="hz-mark" data-tip={`${HUMANIZER_LABELS[m.hz.service]} rewrites this once it's written`}><Icon name="person" size={13} /></span>}
     </div>
+  )
+}
+
+/** A reply, with a closing Sources line shown as links to the pages under it. */
+function ReplyBody({ text, streaming }: { text: string; streaming: boolean }) {
+  const { body, sources } = splitSources(text)
+  return (
+    <>
+      <Markdown text={body} streaming={streaming} />
+      {sources.length > 0 && (
+        <div className="sources" aria-label="Sources">
+          <Icon name="globe" size={12} />
+          {sources.map((x) => (
+            <a key={x.url} href={x.url} target="_blank" rel="noreferrer" data-tip={x.url}>{URL.parse(x.url)?.hostname.replace(/^www\./, '') ?? x.title}</a>
+          ))}
+        </div>
+      )}
+    </>
   )
 }
 

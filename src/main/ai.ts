@@ -1,6 +1,7 @@
 import type Anthropic from '@anthropic-ai/sdk'
 import { app, nativeImage, safeStorage } from 'electron'
 import { createHash } from 'node:crypto'
+import { EventEmitter } from 'node:events'
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -35,7 +36,7 @@ export async function runAsk(ai: State['ai'], system: string[], p: AskPayload, o
   // JPEG keeps big screenshots well under the APIs' per-image size limits.
   const jpeg = p.screenshot ? nativeImage.createFromDataURL(p.screenshot).toJPEG(85) : null
   const { smart, think } = speedOf(ai, p)
-  const search = searches(ai, p)
+  const search = searches(ai, p) && !searchRefused.has(ai.provider as 'anthropic')
   p = { ...p, history: recentHistory(p.history) }
   try {
     switch (ai.provider) {
@@ -67,6 +68,19 @@ const speedOf = (ai: State['ai'], p: Pick<AskPayload, 'effort'>) => ({ smart: p.
 
 /** A model declining to answer: final, so no fallback is asked to answer in its place. */
 class RefusalError extends Error {}
+
+/**
+ * What an ask's web search is doing, by ask id, for the chat panel: a search started (with its query once known), or
+ * search couldn't run and the answer goes on without it. Codex reports nothing until it's done.
+ */
+export type WebEvent = { search: string } | { error: string }
+export const webEvents = new EventEmitter()
+const web = (p: Pick<AskPayload, 'id'>, e: WebEvent) => p.id !== 'complete' && webEvents.emit(p.id, e)
+/** The API turned the search tool down (not enabled for the key's organization or model): asked again without it. */
+const NO_SEARCH = /web[ _]?search/i
+const NO_SEARCH_NOTE = "Web search isn't available on this API key, so this answer didn't search. An admin can turn it on in the provider's console."
+/** Keys that turned search down, until Glint restarts: their asks skip it instead of being turned down every time. */
+const searchRefused = new Set<'anthropic' | 'openai'>()
 
 /** API providers need a key (saved, or in the environment); without one, trying them as a fallback is just noise. */
 function usable(provider: AiProvider): boolean {
@@ -250,7 +264,7 @@ const CACHE_CONTEXT = { type: 'ephemeral', ttl: '5m' } as const
 function anthropicPrefix(model: string, think: boolean, system: string[], effort: AskPayload['effort'], search: boolean) {
   return {
     model,
-    ...(search ? { tools: [webSearchTool(model)] } : {}),
+    ...(search ? { tools: [webSearchTool(model, effort === 'smart')] } : {}),
     ...(effort && anthropicEffort(model) ? { output_config: { effort: effort === 'smart' ? 'high' as const : 'low' as const } } : {}),
     ...anthropicThinking(model, think),
     system: system.map((text) => ({ type: 'text' as const, text, cache_control: CACHE_CONVERSATION })),
@@ -259,13 +273,13 @@ function anthropicPrefix(model: string, think: boolean, system: string[], effort
 }
 
 /**
- * The newer search filters results before reading them, on the models that take it; others get the basic one. A few
- * searches cover any meeting question, and each one bills and keeps the user waiting.
+ * The newer search filters results before reading them, on the models that take it; others get the basic one. Each
+ * search bills and keeps the user waiting: two cover a fast answer, smart mode may dig further.
  */
-const webSearchTool = (model: string) => ({
+const webSearchTool = (model: string, smart: boolean) => ({
   type: /^claude-(opus-5(-5)?|opus-4-[678]|sonnet-5(-5)?|sonnet-4-6|fable-5(-1)?)(-\d{8})?$/.test(model) ? 'web_search_20260209' : 'web_search_20250305',
   name: 'web_search',
-  max_uses: 3,
+  max_uses: smart ? 5 : 2,
 }) as const
 
 /** Searched sources as a closing line of links, for the chat panel (Glance and Ghost show or type the answer alone). */
@@ -330,17 +344,42 @@ async function askClaudeApi(model: string, think: boolean, search: boolean, syst
   const sources: { url: string; title?: string | null }[] = []
   let wrote = false
   let since = false // a search ran since the last words: the next words start a new paragraph
+  const queries = new Map<number, string>() // search blocks' input, by index, as it streams
   // A long server-side search can pause the turn; sending it back as it stands resumes it. A few times at most.
   for (let turn = 0; ; turn++) {
     const stream = client.beta.messages.stream({ ...prefix, max_tokens: maxOutput(think || alwaysThinks(model)), messages }, { signal })
-    for await (const event of stream) {
-      alive?.()
-      if (event.type === 'content_block_start' && event.content_block.type !== 'text' && event.content_block.type !== 'thinking') since = true
-      if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-        onDelta(wrote && since ? `\n\n${event.delta.text}` : event.delta.text)
-        wrote = true
-        since = false
+    try {
+      for await (const event of stream) {
+        alive?.()
+        if (event.type === 'content_block_start' && event.content_block.type !== 'text' && event.content_block.type !== 'thinking') since = true
+        if (event.type === 'content_block_start' && event.content_block.type === 'server_tool_use' && event.content_block.name === 'web_search') {
+          queries.set(event.index, '')
+          web(p, { search: '' })
+        }
+        if (event.type === 'content_block_delta' && event.delta.type === 'input_json_delta' && queries.has(event.index)) queries.set(event.index, queries.get(event.index) + event.delta.partial_json)
+        if (event.type === 'content_block_stop' && queries.has(event.index)) {
+          const q = (() => { try { return (JSON.parse(queries.get(event.index)!) as { query?: unknown }).query } catch { return undefined } })()
+          if (typeof q === 'string' && q) web(p, { search: q })
+          queries.delete(event.index)
+        }
+        if (event.type === 'content_block_start' && event.content_block.type === 'web_search_tool_result') {
+          const c = event.content_block.content as { type?: string; error_code?: string } | unknown[] | undefined
+          if (c && !Array.isArray(c) && c.type === 'web_search_tool_result_error') web(p, { error: `A search failed (${c.error_code ?? 'error'}); the answer uses what Claude already knows.` })
+        }
+        if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+          onDelta(wrote && since ? `\n\n${event.delta.text}` : event.delta.text)
+          wrote = true
+          since = false
+        }
       }
+    } catch (err) {
+      // The search tool turned down before anything was written: the same ask without it, rather than no answer.
+      if (search && !wrote && !signal.aborted && NO_SEARCH.test((err as Error).message ?? '')) {
+        searchRefused.add('anthropic')
+        web(p, { error: NO_SEARCH_NOTE })
+        return askClaudeApi(model, think, false, system, p, jpeg, onDelta, signal, alive)
+      }
+      throw err
     }
     const final = await stream.finalMessage()
     usedAt.set(prefixKey(prefix), Date.now())
@@ -371,7 +410,8 @@ async function askOpenAiApi(model: string, think: boolean, search: boolean, syst
       prompt_cache_key: `glint-${createHash('sha256').update(system.join('\n\n')).digest('hex').slice(0, 16)}`,
       max_output_tokens: maxOutput(think),
       ...(effort ? { reasoning: { effort } } : {}),
-      ...(search ? { tools: [{ type: 'web_search' as const }] } : {}),
+      // Low context: fewer pages read per search, so it's faster and cheaper. Smart mode reads more.
+      ...(search ? { tools: [{ type: 'web_search' as const, search_context_size: p.effort === 'smart' ? 'medium' as const : 'low' as const }] } : {}),
       input: [
         ...p.history.filter((m) => m.text.trim()).map((m) => ({ role: m.role, content: m.text })),
         {
@@ -385,9 +425,24 @@ async function askOpenAiApi(model: string, think: boolean, search: boolean, syst
     },
     { signal },
   )
-  for await (const event of stream) {
-    alive?.()
-    if (event.type === 'response.output_text.delta') onDelta(event.delta)
+  let wrote = false
+  try {
+    for await (const event of stream) {
+      alive?.()
+      if (event.type === 'response.output_text.delta') (onDelta(event.delta), (wrote = true))
+      if (event.type === 'response.web_search_call.in_progress') web(p, { search: '' })
+      if (event.type === 'response.output_item.done' && event.item.type === 'web_search_call') {
+        const q = (event.item as { action?: { type?: string; query?: string } }).action
+        if (q?.type === 'search' && q.query) web(p, { search: q.query })
+      }
+    }
+  } catch (err) {
+    if (search && !wrote && !signal.aborted && NO_SEARCH.test((err as Error).message ?? '')) {
+      searchRefused.add('openai')
+      web(p, { error: NO_SEARCH_NOTE })
+      return askOpenAiApi(model, think, false, system, p, jpeg, onDelta, signal, alive)
+    }
+    throw err
   }
   const final = await stream.finalResponse()
   if (final.status === 'incomplete') throw new Error(final.incomplete_details?.reason === 'content_filter' ? "OpenAI's content filter cut the answer off." : CUT_OFF)
@@ -604,6 +659,7 @@ async function askClaudeCli(model: string, think: boolean, search: boolean, syst
       if (signal.aborted) return
       alive?.()
       const r = parseClaudeLine(line)
+      if (r.search !== undefined) web(p, { search: r.search })
       if (r.turn && reply) turned = true // a search ran between: the next words start a new paragraph
       if (r.text) {
         const text = turned ? `\n\n${r.text}` : r.text
@@ -650,7 +706,8 @@ async function askCodexCli(model: string, _think: boolean, search: boolean, syst
     const [file, lead] = await platform.cliCommand('codex', PATH)
     const args = [
       'exec', '--skip-git-repo-check', '--sandbox', 'read-only',
-      '-c', `web_search="${search ? 'live' : 'disabled'}"`,
+      // Cached: OpenAI's index of the web, fast. Smart mode fetches pages live.
+      '-c', `web_search="${!search ? 'disabled' : p.effort === 'smart' ? 'live' : 'cached'}"`,
       // No shell tool: the prompt carries other people's speech and screen text, and read-only still allows
       // reading any file. Without a shell, an injected "cat ~/.ssh/…" has nothing to run it with.
       '-c', 'features.shell_tool=false',

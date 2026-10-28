@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { mock, test } from 'node:test'
-import { coolClaudeCli, runAsk } from './ai.ts'
+import { coolClaudeCli, runAsk, webEvents } from './ai.ts'
 import { platform } from './platform/index.ts'
 import { autoAsk } from '../shared/prompt.ts'
 import type { AskPayload } from '../shared/state.ts'
@@ -11,10 +11,12 @@ import { getState, initState } from './state.ts'
 
 // The SDKs, faked: each stream call is recorded and plays the next scripted turn (its events, then its final message).
 const calls: { sdk: string; params: any }[] = []
-let turns: { events: object[]; final: object }[] = []
+let turns: ({ events: object[]; final: object } | { throws: string })[] = []
 const play = (sdk: string, params: any) => {
   calls.push({ sdk, params: structuredClone(params) })
-  const { events, final } = turns.shift()!
+  const t = turns.shift()!
+  if ('throws' in t) return { async *[Symbol.asyncIterator]() { throw new Error(t.throws) } }
+  const { events, final } = t
   return { async *[Symbol.asyncIterator]() { yield* events }, finalMessage: async () => final, finalResponse: async () => final }
 }
 mock.module('@anthropic-ai/sdk', { defaultExport: class { beta = { messages: { stream: (p: object) => play('anthropic', p) } } } })
@@ -43,7 +45,7 @@ test('Claude API: searches, resumes a paused turn, breaks the paragraph after a 
   ]
   const out = await answer({ provider: 'anthropic', anthropicModel: 'claude-sonnet-5-5', webSearch: true })
   assert.equal(out, 'Checking.\n\nNode 26 is current.\n\nSources: [Node.js](https://nodejs.org/en)')
-  assert.deepEqual(calls[0].params.tools, [{ type: 'web_search_20260209', name: 'web_search', max_uses: 3 }])
+  assert.deepEqual(calls[0].params.tools, [{ type: 'web_search_20260209', name: 'web_search', max_uses: 2 }]) // fast: two searches at most
   assert.deepEqual(calls[1].params.messages.at(-1), { role: 'assistant', content: paused }) // resumed as it stood
 })
 
@@ -76,7 +78,7 @@ test('OpenAI: web_search with at least low reasoning, and its url citations as s
   }]
   const out = await answer({ provider: 'openai', openaiModel: 'gpt-5', webSearch: true })
   assert.equal(out, 'Node 26.\n\nSources: [Node](https://nodejs.org)')
-  assert.deepEqual(calls[0].params.tools, [{ type: 'web_search' }])
+  assert.deepEqual(calls[0].params.tools, [{ type: 'web_search', search_context_size: 'low' }]) // fast: fewer pages read
   assert.deepEqual(calls[0].params.reasoning, { effort: 'low' }) // GPT-5's minimal refuses web search
 })
 
@@ -117,9 +119,46 @@ fs.writeFileSync(args[args.indexOf('--output-last-message') + 1], 'Node 26.')
     return JSON.parse(fs.readFileSync(path.join(dir, 'args.json'), 'utf8')) as { args: string[]; stdin: string }
   }
   const on = await run(true)
-  assert.ok(on.args.indexOf('-c') > on.args.indexOf('exec') && on.args.includes('web_search="live"') && !on.args.includes('--search'))
+  assert.ok(on.args.indexOf('-c') > on.args.indexOf('exec') && on.args.includes('web_search="cached"') && !on.args.includes('--search')) // fast: the index
+  assert.ok((await run(true, { ...ask, effort: 'smart' })).args.includes('web_search="live"'))
   assert.match(on.stdin, /Sources: /)
   assert.ok((await run(false)).args.includes('web_search="disabled"'))
   assert.doesNotMatch((await run(true, { ...ask, brief: true })).stdin, /Sources: /)
   assert.ok((await run(true, { ...ask, text: autoAsk('Look it up') })).args.includes('web_search="disabled"'))
+})
+
+test('search events: each search and its query as they stream, and an answer without search when the key may not search', async () => {
+  initState({})
+  calls.length = 0
+  const seen: object[] = []
+  const listen = (e: object) => seen.push(e)
+  webEvents.on('a', listen)
+  const ev = (o: object) => ({ index: 1, ...o })
+  turns = [{
+    events: [
+      ev({ type: 'content_block_start', content_block: { type: 'server_tool_use', name: 'web_search' } }),
+      ev({ type: 'content_block_delta', delta: { type: 'input_json_delta', partial_json: '{"query": "node ' } }),
+      ev({ type: 'content_block_delta', delta: { type: 'input_json_delta', partial_json: 'lts"}' } }),
+      ev({ type: 'content_block_stop' }),
+      ev({ type: 'content_block_start', content_block: { type: 'web_search_tool_result', content: { type: 'web_search_tool_result_error', error_code: 'too_many_requests' } } }),
+    ],
+    final: { stop_reason: 'end_turn', usage, content: [] },
+  }]
+  await answer({ provider: 'anthropic', anthropicModel: 'claude-sonnet-5-5', webSearch: true }, { ...ask, effort: 'smart' })
+  assert.equal(calls[0].params.tools[0].max_uses, 5) // smart digs further
+  assert.deepEqual(seen.slice(0, 2), [{ search: '' }, { search: 'node lts' }])
+  assert.match((seen[2] as { error: string }).error, /too_many_requests/)
+
+  // Turned down: answered without the tool, said once, and later asks skip it.
+  seen.length = 0
+  calls.length = 0
+  const plain = { events: [{ type: 'content_block_delta', delta: { type: 'text_delta', text: 'Node 26.' } }], final: { stop_reason: 'end_turn', usage, content: [] } }
+  turns = [{ throws: '400 web search is not enabled for this organization' }, plain, plain]
+  assert.equal(await answer({ provider: 'anthropic', anthropicModel: 'claude-sonnet-5-5', webSearch: true }), 'Node 26.')
+  assert.equal(calls[1].params.tools, undefined)
+  assert.match((seen[0] as { error: string }).error, /isn't available/)
+  await answer({ provider: 'anthropic', anthropicModel: 'claude-sonnet-5-5', webSearch: true })
+  assert.equal(calls.length, 3)
+  assert.equal(calls[2].params.tools, undefined)
+  webEvents.off('a', listen)
 })

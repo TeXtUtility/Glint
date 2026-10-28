@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { copyText, normalizeMath, plainLine, scrub, texToText, toPlain, typeable, wholeSentences } from './markdown.ts'
+import { copyText, normalizeMath, plainLine, scrub, splitSources, texToText, toPlain, typeable, wholeSentences } from './markdown.ts'
 
 test('normalizeMath converts LaTeX delimiters outside code only', () => {
   assert.equal(normalizeMath('so \\(x^2\\) and \\[\\frac{a}{b}\\]'), 'so $x^2$ and $$\\frac{a}{b}$$')
@@ -92,4 +92,14 @@ test('wholeSentences keeps finished sentences and lines only', () => {
   assert.equal(wholeSentences('**Done.** Next'), '**Done.**')
   assert.equal(wholeSentences('He said "yes." Then'), 'He said "yes."')
   assert.equal(wholeSentences('Nothing finished yet'), '')
+})
+
+test('splitSources: the closing Sources line becomes links; anything else stays', () => {
+  const r = splitSources('It ships in May.\n\nSources: [The Verge](https://theverge.com/a), [apple.com](https://www.apple.com/b)')
+  assert.equal(r.body, 'It ships in May.')
+  assert.deepEqual(r.sources, [{ title: 'The Verge', url: 'https://theverge.com/a' }, { title: 'apple.com', url: 'https://www.apple.com/b' }])
+  assert.deepEqual(splitSources('**Sources:** [x](https://x.com)\n').sources.length, 0) // no answer before it: first line, left alone
+  assert.equal(splitSources('Answer.\n**Sources:** [x](https://x.com)').body, 'Answer.')
+  assert.equal(splitSources('Sources: below.\nMore text.').sources.length, 0)
+  assert.equal(splitSources('A.\nSources: [js](javascript:alert(1))').sources.length, 0) // only web links
 })

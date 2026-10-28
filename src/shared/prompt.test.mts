@@ -187,3 +187,12 @@ test('practice calls: a real template, lines after the pause, lines in time orde
     for (const part of [before, after]) part.forEach((l, i) => i && assert.ok(l.at > part[i - 1].at, `${id} line ${i}`))
   }
 })
+
+test('parseClaudeLine: a web search, as it starts and then with its query', () => {
+  const start = JSON.stringify({ type: 'stream_event', event: { type: 'content_block_start', index: 1, content_block: { type: 'tool_use', name: 'WebSearch', input: {} } } })
+  const call = JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'WebSearch', input: { query: 'iPhone 18 release date' } }] } })
+  const other = JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'hi' }] } })
+  assert.deepEqual(parseClaudeLine(start), { search: '' })
+  assert.deepEqual(parseClaudeLine(call), { search: 'iPhone 18 release date' })
+  assert.deepEqual(parseClaudeLine(other), {})
+})
