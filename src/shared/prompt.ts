@@ -263,14 +263,15 @@ export function wrapText(text: string, maxWidth: number, measure: (s: string) =>
   return out
 }
 
-export const NOTES_SYSTEM_PROMPT = `You write the notes for a conversation that has just ended: a meeting, call, interview or lecture.
+/** What the notes should say; Settings → Notes and email can replace it. The reply format (NOTES_FORMAT) is always added. */
+export const NOTES_INSTRUCTIONS = `You write the notes for a conversation that has just ended: a meeting, call, interview or lecture.
 You get the transcript and any questions the user asked their assistant during it. In the transcript "Me" is the user; other people appear by name when their voice was recognised, as "Speaker 1", "Speaker 2" and so on when it wasn't, or as "Them". A "?" after a name means Glint wasn't sure who said that line.
 Write in the language the conversation was held in. Be accurate: only state what was actually said, and don't guess names that weren't mentioned.
 
 Action items are what someone agreed to do or was asked to do. Start each with a verb. The owner is the name as the transcript gives it, "Me" for the user, or blank if nobody took it. Give a date only when a specific day was said, working out words like "Friday" or "tomorrow" from the meeting date; leave vague ones ("soon", "next week") blank. Give a time only when one was said.
-The last column is any timing said for the task, specific or vague: always a date first, your best reading of the words (and a time if one was said), then the words used in quotes, for example 2026-10-01 "before Friday", 2026-10-05 10:00 "Monday morning, say ten" or 2026-10-05 "sometime next week". Read "next week" as its Monday and "end of the month" as its last working day. Blank if no timing was said.
+The last column is any timing said for the task, specific or vague: always a date first, your best reading of the words (and a time if one was said), then the words used in quotes, for example 2026-10-01 "before Friday", 2026-10-05 10:00 "Monday morning, say ten" or 2026-10-05 "sometime next week". Read "next week" as its Monday and "end of the month" as its last working day. Blank if no timing was said.`
 
-Reply in exactly this format and nothing else:
+const NOTES_FORMAT = `Reply in exactly this format and nothing else:
 TITLE: <a specific title of at most 8 words>
 TAGS: <1 to 4 short lowercase topic tags, comma separated>
 ACTIONS:
@@ -278,6 +279,9 @@ ACTIONS:
 (one line per action item; write "ACTIONS: none" if there were none)
 SUMMARY:
 <markdown: a two-sentence overview, then "### Key points" as bullets, then "### Decisions" only if there were any>`
+
+export const notesSystem = (custom = '') => `${custom.trim() || NOTES_INSTRUCTIONS}\n\n${NOTES_FORMAT}`
+export const NOTES_SYSTEM_PROMPT = notesSystem()
 
 // ponytail: very long sessions keep only their last NOTES_MAX_CHARS; chunked summarising if hour-plus calls get cut.
 const NOTES_MAX_CHARS = 150_000
@@ -353,13 +357,17 @@ export function parseNotes(reply: string): Notes | null {
   return title && summary ? { title, tags, summary, actions } : null
 }
 
-export const FOLLOW_UP_SYSTEM_PROMPT = `You write the follow-up email the user sends after a meeting, from its notes, action items and transcript. "Me" is the user: write as them, in the first person, to the other people in the meeting, by name where the transcript names them.
-Keep it short: a line of thanks, what was decided, the action items with who will do what and by when (they're still to do, so write them that way), and the next step. It goes out right after the meeting, so the meeting was "today". It's a plain-text email body: short paragraphs and "- " bullets, no bold, headings or code, and no em or en dashes. Write dates and times the way people do ("by Wednesday, Sep 30", "Friday at 3pm"), never as 2026-09-30 or 15:00. Someone known only as "Speaker 2" or "Them" isn't named: leave the label out. Only say what the meeting said; never invent names, dates or commitments. Write in the language of the meeting. End with "Best," on its own line and nothing after it.
+/** How the follow-up email is written; Settings → Notes and email can replace it. The reply format is always added. */
+export const FOLLOW_UP_INSTRUCTIONS = `You write the follow-up email the user sends after a meeting, from its notes, action items and transcript. "Me" is the user: write as them, in the first person, to the other people in the meeting, by name where the transcript names them.
+Keep it short: a line of thanks, what was decided, the action items with who will do what and by when (they're still to do, so write them that way), and the next step. It goes out right after the meeting, so the meeting was "today". It's a plain-text email body: short paragraphs and "- " bullets, no bold, headings or code, and no em or en dashes. Write dates and times the way people do ("by Wednesday, Sep 30", "Friday at 3pm"), never as 2026-09-30 or 15:00. Someone known only as "Speaker 2" or "Them" isn't named: leave the label out. Only say what the meeting said; never invent names, dates or commitments. Write in the language of the meeting. End with "Best," on its own line and nothing after it.`
 
-Reply in exactly this format and nothing else:
+const FOLLOW_UP_FORMAT = `Reply in exactly this format and nothing else:
 SUBJECT: <a short, specific subject line>
 BODY:
 <the email>`
+
+export const followUpSystem = (custom = '') => `${custom.trim() || FOLLOW_UP_INSTRUCTIONS}\n\n${FOLLOW_UP_FORMAT}`
+export const FOLLOW_UP_SYSTEM_PROMPT = followUpSystem()
 
 export function followUpPrompt(r: { title?: string; summary?: string; actions?: ActionItem[]; transcript: string; day: string }): string {
   const parts = [`The meeting was on ${r.day}.`]

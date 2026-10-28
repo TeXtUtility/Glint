@@ -10,7 +10,7 @@ import {
   chatRecord, cleanActions, isChatId, notesOf, ownerName, parseRecord, personFor, renamed, resumeFrom, toRecord, transcriptText,
   type ActionItem, type SavedMessage, type SavedSession, type SessionSummary,
 } from '../shared/history'
-import { FOLLOW_UP_SYSTEM_PROMPT, followUpPrompt, meetingDay, NOTES_SYSTEM_PROMPT, notesPrompt, parseFollowUp, parseFollowUpPartial, parseNotes } from '../shared/prompt'
+import { followUpPrompt, followUpSystem, meetingDay, notesPrompt, notesSystem, parseFollowUp, parseFollowUpPartial, parseNotes } from '../shared/prompt'
 import type { Session, State } from '../shared/state'
 import { complete } from './ai'
 import { failureLine, humanize } from './humanize'
@@ -253,7 +253,7 @@ export async function draftFollowUp(id: string, onPartial?: (d: { subject: strin
   // A humanized email isn't shown as it's drafted: it appears once the service has rewritten it.
   const h = getState().humanizer
   const rewrite = h.service !== 'none' && h.on && h.apply.email
-  let draft = parseFollowUp(await complete(getState().ai, [FOLLOW_UP_SYSTEM_PROMPT], prompt, { effort: 'fast', onText: rewrite ? undefined : onText }))
+  let draft = parseFollowUp(await complete(getState().ai, [followUpSystem(getState().afterCall.emailPrompt)], prompt, { effort: 'fast', onText: rewrite ? undefined : onText }))
   if (!draft) throw new Error("The AI's reply wasn't an email. Try again.")
   if (rewrite) {
     try {
@@ -310,7 +310,8 @@ export function macWakes() {
 /** The network is usually back a few seconds after waking. */
 const retryAfterWake = (id: string) => (asleep ? afterWake.add(id) : setTimeout(() => void generateNotes(id), 10_000))
 
-export async function generateNotes(id: string) {
+/** `fresh`: written anew, replacing an edited title and summary (Regenerate); otherwise edits are kept. */
+export async function generateNotes(id: string, fresh = false) {
   if (getState().session?.id === id) return // live sessions get notes when they end
   if (generating.has(id)) {
     again.add(id)
@@ -322,23 +323,27 @@ export async function generateNotes(id: string) {
   generating.add(id)
   write({ ...r, notesStatus: 'processing', notesError: undefined })
   try {
-    const reply = await complete(getState().ai, [NOTES_SYSTEM_PROMPT], notesPrompt(transcriptText(r.transcript, r.speakers), r.messages, meetingDay(r.startedAt)))
+    const reply = await complete(getState().ai, [notesSystem(getState().afterCall.notesPrompt)], notesPrompt(transcriptText(r.transcript, r.speakers), r.messages, meetingDay(r.startedAt)))
     const labels = { me: 'Me', ...r.speakers } // the names the transcript gave the model
     const notes = parseNotes(reply)
     if (!notes) throw new Error("the reply wasn't in the expected format")
     const cur = tryLoad(id) // re-read: chat may have been added, or the user edited meanwhile
     if (!cur) return // deleted meanwhile: writing would bring it back
+    const keep = cur.edited && !fresh
     write({
       ...cur,
-      title: cur.edited && cur.title ? cur.title : notes.title,
-      summary: cur.edited && cur.summary ? cur.summary : notes.summary,
+      title: keep && cur.title ? cur.title : notes.title,
+      summary: keep && cur.summary ? cur.summary : notes.summary,
+      edited: keep ? cur.edited : undefined,
       tags: notes.tags,
       notesLabels: labels,
       actions: mergeActions(cur.actions ?? [], notes.actions, labels),
       notesStatus: 'done',
       notesError: undefined,
     })
-    if (!again.has(id) && getState().session?.id !== id) patchState({ notesReady: { id, title: (cur.edited && cur.title) || notes.title } })
+    if (!again.has(id) && getState().session?.id !== id) patchState({ notesReady: { id, title: (keep && cur.title) || notes.title } })
+    // The email follows the notes: drafted now unless switched off, and again whenever the notes are regenerated.
+    if ((fresh || !cur.followUp) && getState().afterCall.autoDraft) void draftFollowUp(id).catch((err) => console.warn('[history] email draft failed:', (err as Error).message))
   } catch (err) {
     console.error('[history] notes failed:', err)
     // Cut off by the Mac sleeping (the lid closing): written again once it's awake, not left failed.

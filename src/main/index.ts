@@ -321,7 +321,7 @@ const RENDERER_PATCHABLE = new Set([
   'chat', 'overlayVisible', 'isInvisible', 'lockFocusWhenInvisible', 'discreet', 'opacity', 'screenContext', 'screenshotNote', 'theme', 'openAtLogin', 'onboardingDone',
   'ai', 'transcription', 'activeModeId', 'vad', 'shortcuts', 'isRecordingShortcut', 'audioError', 'inactivityPrompt',
   'voice', 'roomMode', 'speakerLabels', 'autoCopy', 'layout', 'glance', 'aiFailure', 'smart', 'practicing', 'teach', 'updateChannel',
-  'terminalApp', 'runNewWindow', 'compactBar', 'openAtLoginInitialized', 'devTools', 'humanizer', 'capsule', 'ghostAutoSkip', 'meetingPrompt', 'saveChats',
+  'terminalApp', 'runNewWindow', 'compactBar', 'openAtLoginInitialized', 'devTools', 'humanizer', 'capsule', 'ghostAutoSkip', 'meetingPrompt', 'saveChats', 'afterCall',
 ])
 
 function trusted(e: IpcMainEvent | IpcMainInvokeEvent) {
@@ -507,6 +507,7 @@ function registerIpc() {
   handle('sessions:update', (_e, id: string, fields: { title?: string; summary?: string }) => updateNotes(String(id), fields ?? {}))
   handle('sessions:trash', (_e, id: string) => trashSession(String(id)))
   on('sessions:notes', (_e, id: string) => void generateNotes(String(id)))
+  on('sessions:regenerate', (_e, id: string) => void generateNotes(String(id), true))
   handle('sessions:actions', (_e, id: string, actions: unknown) => updateActions(String(id), actions))
   handle('sessions:calendar', (_e, id: string) => addToCalendar(String(id)))
   handle('sessions:follow-up', (e, id: string) =>

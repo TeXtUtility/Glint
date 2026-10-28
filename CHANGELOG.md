@@ -1,3 +1,8 @@
+## Unreleased
+
+- **The follow-up email drafts itself.** As soon as a call's notes are written, the email is too, ready to send. Settings → Notes and email turns that off.
+- **Your own instructions for notes and email.** Settings → Notes and email shows the instructions the notes and the follow-up email are written from, to change as you like; Glint keeps the reply format itself. Prompt, next to a session's summary, opens them, and Regenerate writes the notes and the email again.
+
 ## 0.16.4 (2026-10-23)
 
 - **Calendar access works on a Mac.** Glint read the calendar permission as denied even before it had asked, so macOS never showed its prompt and System Settings had no Glint entry to turn on. It now asks, and Guess can read the invite. Calendar errors are logged instead of passing for a denial.

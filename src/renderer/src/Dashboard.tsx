@@ -226,6 +226,21 @@ function SessionDetail({ id, s, onBack, onContinue }: { id: string; s: State; on
 
       {(tab === 'followup' || (isChat && r.summary)) && (
         <>
+          {!isChat && !live && (
+            <div className="section-head summary-head">
+              <h3>Summary</h3>
+              <span className="inline">
+                <button className="chip plain" disabled={r.notesStatus === 'processing'} onClick={() => glint.send('sessions:regenerate', id)}
+                  data-tip="Write the notes and the follow-up email again from the call, replacing your edits to the title and summary">
+                  <Icon name="refresh" size={12} />Regenerate
+                </button>
+                <button className="chip plain" onClick={() => glint.send('window:open-settings', 'notes')}
+                  data-tip="See and change the instructions the notes and the email are written from">
+                  <Icon name="edit" size={12} />Prompt
+                </button>
+              </span>
+            </div>
+          )}
           {summary !== null ? (
             <>
               <textarea className="detail-summary" autoFocus value={summary} onChange={(e) => setSummary(e.target.value)}

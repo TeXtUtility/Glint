@@ -1,8 +1,9 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { HUMANIZER_LABELS, HUMANIZER_OPTIONS, HUMANIZERS, type HumanizerCustom, type HumanizerService } from '../../shared/humanize'
-import { MODE_TEMPLATES } from '../../shared/prompt'
+import { FOLLOW_UP_INSTRUCTIONS, MODE_TEMPLATES, NOTES_INSTRUCTIONS } from '../../shared/prompt'
 import { chooseFirst, PROVIDER_LABELS } from '../../shared/providers'
 import {
+  AFTER_CALL_PROMPT_MAX,
   AI_PROVIDERS, clashesWithEditing, CORNERS, DEFAULT_SHORTCUTS, GLANCE_COOLDOWN_RANGE, isDivider, isNewer, isSystemShortcut, NOTE_MAX, PERSISTED_DEFAULTS, prettyAccelerator, TERMINAL_APPS, toAccelerator, LOCAL_WHISPER_MODELS,
   OPACITY_DEFAULTS, OPACITY_RANGES, searchesFiles, VAD_DEFAULTS, VAD_RANGES, VOICE_DEFAULTS, VOICE_RANGES,
   type AiProvider, type AutoCopy, type CapsuleItem, type Corner, type KeyProvider, type KeyStatus, type VoiceSettings, type LocalWhisper, type Mode, type ModeFile, type OpacitySettings, type ShortcutAction, type State, type TerminalApp, type VadSettings,
@@ -17,7 +18,7 @@ import { ConfirmButton, CONSOLES, DraftTextarea, Range, Segmented, useAutosave, 
 declare const __GLINT_COMMIT__: string // electron.vite.config.ts
 
 const PAGES = {
-  general: ['General', 'gear'], overlay: ['Overlay', 'tune'], ai: ['AI', 'logo'], voice: ['Voice', 'wave'], modes: ['Modes', 'layers'],
+  general: ['General', 'gear'], overlay: ['Overlay', 'tune'], ai: ['AI', 'logo'], voice: ['Voice', 'wave'], modes: ['Modes', 'layers'], notes: ['Notes and email', 'mail'],
   shortcuts: ['Shortcuts', 'keyboard'], developer: ['Developer', 'code'], about: ['About', 'info'],
 } as const
 type Page = keyof typeof PAGES
@@ -96,6 +97,7 @@ export function Settings() {
           {page === 'ai' && <Ai s={s} />}
           {page === 'voice' && <Voice s={s} />}
           {page === 'modes' && <Modes s={s} />}
+          {page === 'notes' && <NotesAndEmail s={s} />}
           {page === 'shortcuts' && <Shortcuts s={s} />}
           {page === 'developer' && <Developer s={s} />}
           {page === 'about' && <About s={s} />}
@@ -598,6 +600,32 @@ function Ai({ s }: { s: State }) {
       <Transcription s={s} />
       <Humanize s={s} />
     </>
+  )
+}
+
+/** The instructions the notes and the follow-up email are written from, and whether the email drafts itself. */
+function NotesAndEmail({ s }: { s: State }) {
+  const a = s.afterCall
+  const set = (p: Partial<State['afterCall']>) => patch({ afterCall: p })
+  // Shown as the built-in text when nothing custom is saved; saving the built-in text back keeps it blank, so later
+  // improvements to the built-in instructions still reach this user.
+  const prompt = (label: string, hint: string, value: string, builtIn: string, key: 'notesPrompt' | 'emailPrompt') => (
+    <div className="row stacked">
+      <span className="row-text">{label}<small>{hint}</small></span>
+      <DraftTextarea value={value || builtIn} rows={10} maxLength={AFTER_CALL_PROMPT_MAX}
+        onSave={(text) => set({ [key]: text.trim() === builtIn.trim() ? '' : text })} />
+      <span className="footer-actions">
+        <button disabled={!value} onClick={() => set({ [key]: '' })}>{value ? 'Restore the built-in instructions' : 'Using the built-in instructions'}</button>
+      </span>
+    </div>
+  )
+  return (
+    <Section title="After a call">
+      <Toggle label="Draft the follow-up email after every call" hint="Written as soon as the notes are. Off, press Draft email on a session when you want one."
+        checked={a.autoDraft} onChange={(v) => set({ autoDraft: v })} />
+      {prompt('Notes instructions', 'What the AI is told when it writes a session\'s notes and action items. Glint adds the reply format itself, so they always come out in the right shape.', a.notesPrompt, NOTES_INSTRUCTIONS, 'notesPrompt')}
+      {prompt('Email instructions', 'How the follow-up email is written. Regenerate on a session writes it again with these.', a.emailPrompt, FOLLOW_UP_INSTRUCTIONS, 'emailPrompt')}
+    </Section>
   )
 }
 

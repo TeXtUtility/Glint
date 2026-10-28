@@ -625,6 +625,7 @@ html.glass .ghost :is(.glance-strip, .glance-card):not(.failing) { background-co
 .detail-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 0; }
 .section-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 18px 0 6px; }
 .section-head h3 { margin: 0; font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.summary-head .chip { height: 26px; border-radius: 13px !important; }
 .section-head h3 .count { font-weight: 400; color: rgba(236, 236, 241, 0.45); margin-left: -2px; }
 .chip.cal { height: 26px; padding: 0 10px 0 8px !important; border-radius: 13px !important; gap: 5px; background: rgba(123, 143, 255, 0.18) !important; color: #9aa9ff; font-weight: 600; }
 .action-items { list-style: none; margin: 0; padding: 0; }

@@ -285,6 +285,12 @@ export interface Persisted {
   meetingPrompt: boolean
   /** Chats asked outside a session are kept in History. Off, a new one isn't written; one already there still saves. */
   saveChats: boolean
+  /**
+   * After a session: the instructions the notes and the follow-up email are written from (blank: the built-in ones,
+   * NOTES_INSTRUCTIONS and FOLLOW_UP_INSTRUCTIONS; the reply format is always added), and whether the email is drafted
+   * as soon as the notes are written.
+   */
+  afterCall: { notesPrompt: string; emailPrompt: string; autoDraft: boolean }
   /** Ghost jumps ahead by itself when the user skips, swaps or adds words, or clicks into the next field. Off: only ⌃⌥⌘← → skip. */
   ghostAutoSkip: boolean
   /** macOS: the "move to Applications?" offer is made once. */
@@ -437,6 +443,7 @@ export const PERSISTED_DEFAULTS: Persisted = {
   ghostAutoSkip: true,
   meetingPrompt: true,
   saveChats: false,
+  afterCall: { notesPrompt: '', emailPrompt: '', autoDraft: true },
   movePromptShown: false,
   capsule: { shown: CAPSULE_ITEMS.filter((id) => id !== 'humanize'), hidden: ['humanize'] },
 }
@@ -529,6 +536,8 @@ export const isLanguageCode = (v: unknown) => typeof v === 'string' && /^[a-z]{2
 const perm = (v: unknown) => v === 'unknown' || v === 'granted' || v === 'denied'
 const note = (v: unknown) => typeof v === 'string' && v.length <= NOTE_MAX
 const bool = (v: unknown) => typeof v === 'boolean'
+/** Longest custom notes or email instructions. */
+export const AFTER_CALL_PROMPT_MAX = 8000
 
 const VALID: { [K in keyof Persisted]: (v: Persisted[K]) => boolean } = {
   onboardingDone: bool,
@@ -589,6 +598,8 @@ const VALID: { [K in keyof Persisted]: (v: Persisted[K]) => boolean } = {
   ghostAutoSkip: bool,
   meetingPrompt: bool,
   saveChats: bool,
+  afterCall: (a) => typeof a.notesPrompt === 'string' && a.notesPrompt.length <= AFTER_CALL_PROMPT_MAX &&
+    typeof a.emailPrompt === 'string' && a.emailPrompt.length <= AFTER_CALL_PROMPT_MAX && typeof a.autoDraft === 'boolean',
   movePromptShown: bool,
   capsule: (c) => {
     if (!isObj(c) || !Array.isArray(c.shown) || !Array.isArray(c.hidden)) return false
@@ -606,7 +617,7 @@ export function loadPersisted(json: string): { value: Persisted; rejected: strin
   if (!isObj(raw)) throw new Error('state.json is not an object')
   const d = PERSISTED_DEFAULTS
   const group = <K extends keyof Persisted>(k: K) => ({ ...(d[k] as object), ...(isObj(raw[k]) ? pick(raw[k], Object.keys(d[k] as object)) : {}) })
-  const groups = ['permissions', 'shortcuts', 'ai', 'transcription', 'vad', 'voice', 'glance', 'opacity', 'screenshotNote', 'humanizer'] as const
+  const groups = ['permissions', 'shortcuts', 'ai', 'transcription', 'vad', 'voice', 'glance', 'opacity', 'screenshotNote', 'humanizer', 'afterCall'] as const
   const out: Record<string, unknown> = { ...d, ...pick(raw, Object.keys(d)), ...Object.fromEntries(groups.map((k) => [k, group(k)])) }
   // Settings from before fast and smart models were separate: the old default (Opus) is now the smart model's, and
   // fast answers get the fast default. A model the user picked stays their fast model.

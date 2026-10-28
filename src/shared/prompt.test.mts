@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { cliPrompt, composeNote, followUpPrompt, meetingDay, parseFollowUp, GLANCE_PROMPT, isRetry, REFERENCE_PROMPT, RETRY_PROMPT, nameGuessContext, nameGuessQuestion, parseNameGuess, lineKey, MODE_TEMPLATES, notesPrompt, parseClaudeLine, parseNotes, recentHistory, SYSTEM_PROMPT, systemPrompt, unsentLines, userPrompt, wrapText } from './prompt.ts'
+import { cliPrompt, composeNote, followUpSystem, NOTES_INSTRUCTIONS, notesSystem, NOTES_SYSTEM_PROMPT, followUpPrompt, meetingDay, parseFollowUp, GLANCE_PROMPT, isRetry, REFERENCE_PROMPT, RETRY_PROMPT, nameGuessContext, nameGuessQuestion, parseNameGuess, lineKey, MODE_TEMPLATES, notesPrompt, parseClaudeLine, parseNotes, recentHistory, SYSTEM_PROMPT, systemPrompt, unsentLines, userPrompt, wrapText } from './prompt.ts'
 
 test('userPrompt includes transcript and falls back to an implicit ask', () => {
   const p = userPrompt({ text: '', hasSession: true, transcript: [{ role: 'them', text: 'Any questions?' }] })
@@ -166,4 +166,15 @@ test('recentHistory keeps the newest turns that fit, starting on a user turn', (
 
 test('an empty NAME line is no name, not the WHY line', () => {
   assert.deepEqual(parseNameGuess('NAME:\nWHY: nobody names them'), { name: null, why: 'nobody names them' })
+})
+
+test('notes and email instructions can be replaced, and the reply format is always kept', () => {
+  assert.equal(notesSystem(), NOTES_SYSTEM_PROMPT)
+  assert.ok(notesSystem('').startsWith(NOTES_INSTRUCTIONS))
+  const custom = notesSystem('Write the notes in Spanish.')
+  assert.ok(custom.startsWith('Write the notes in Spanish.') && !custom.includes(NOTES_INSTRUCTIONS))
+  assert.ok(custom.includes('Reply in exactly this format') && custom.includes('TITLE:') && custom.includes('SUMMARY:'))
+  const email = followUpSystem('Sign off as Ezra.')
+  assert.ok(email.startsWith('Sign off as Ezra.') && email.includes('SUBJECT:') && email.includes('BODY:'))
+  assert.equal(followUpSystem('   '), followUpSystem())
 })
