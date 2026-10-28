@@ -1,5 +1,12 @@
 ## Unreleased
 
+- **A new setup that shows what Glint does.** It starts by asking what you'll use Glint for first (sales calls, team meetings, hiring interviews, lectures, or something else) and turns on the matching mode. Then a one-minute practice call made for that choice: two voices, big captions so it works with the sound off, and a sheet on screen to answer from. You press ⌘↩ when you're asked something, see what a screen share sees (Glint isn't in it), hide and bring back Glint with ⌘\, and the call ends with its notes and follow-up email. The last screen sums up the four keys and what's done so far. "I've used Glint before" skips the practice.
+- **The practice call records nothing.** Its lines go straight into the transcript as they're spoken, so it works before the speech model is downloaded, without screen recording, and with no AI yet (it shows a marked sample answer).
+- **Permissions can wait.** Setup's permissions screen has Skip for now, and a live mic meter once the mic is allowed.
+- **Setup finds your AI.** A signed-in Claude Code or Codex is named and used without anything to set up. The install commands moved under "For developers".
+- **New installs start with a smaller capsule**: activity, mode, session, chat and Ask. The rest waits in Meeting options.
+- The "No AI set up" alarm waits until setup is done.
+
 - **The follow-up email drafts itself.** As soon as a call's notes are written, the email is too, ready to send. Settings → Notes and email turns that off.
 - **Your own instructions for notes and email.** Settings → Notes and email shows the instructions the notes and the follow-up email are written from, to change as you like; Glint keeps the reply format itself. Prompt, next to a session's summary, opens them, and Regenerate writes the notes and the email again.
 

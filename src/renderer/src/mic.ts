@@ -6,6 +6,9 @@ const MIC_CONSTRAINTS: MediaTrackConstraints = { channelCount: 1, echoCancellati
 /** Room mode: no gain control, since loudness is a clue to who is nearest the mic (the user). */
 const ROOM_CONSTRAINTS: MediaTrackConstraints = { ...MIC_CONSTRAINTS, autoGainControl: false }
 
+/** Bar heights (px) of the little mic level meters. */
+export const METER_BARS = [6, 10, 14, 9, 5, 5]
+
 /** The system's default input, as Chromium lists it ("Default - AirPods"). */
 export const defaultMic = async () => (await navigator.mediaDevices.enumerateDevices()).find((d) => d.kind === 'audioinput' && d.deviceId === 'default')?.label
 

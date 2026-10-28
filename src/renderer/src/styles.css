@@ -727,7 +727,7 @@ html[data-route="onboarding"] body { font-size: 13px; }
 .ob h1.big { font-size: 34px; letter-spacing: -0.02em; line-height: 1.1; }
 .ob-heading p { margin: 0; font-size: 14px; line-height: 1.55; color: var(--muted); text-wrap: pretty; }
 .ob-heading.wide p { font-size: 15px; }
-.ob-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; max-width: 680px; }
+.ob-uses { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; max-width: 680px; }
 .ob-card { display: flex; flex-direction: column; gap: 8px; padding: 16px; border-radius: 14px; background: var(--card); border: 1px solid var(--line); }
 .ob-card svg { color: var(--accent-text); }
 .ob-card b { font-size: 13px; font-weight: 600; }
@@ -763,7 +763,7 @@ html[data-route="onboarding"] .ob-perms .allowed, html[data-route="onboarding"] 
 .ob-login { display: flex; align-items: center; gap: 8px; margin: 14px 0 0; font-size: 12.5px; color: var(--muted); }
 .ob-speech { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--faint); }
 .ob-speech.error { color: var(--danger); }
-.ob-speech .track, .sample .track { width: 120px; height: 3px; border-radius: 2px; background: var(--track); overflow: hidden; flex: none; }
+.ob-speech .track { width: 120px; height: 3px; border-radius: 2px; background: var(--track); overflow: hidden; flex: none; }
 .ob-speech .track i { display: block; height: 100%; background: #7b8fff; }
 /* Try it */
 .ob-page.tryit { display: grid; grid-template-columns: minmax(0, 1fr) 300px; grid-template-rows: 1fr auto; gap: 36px; padding: 60px 60px 40px; }
@@ -785,14 +785,9 @@ html[data-route="onboarding"] .ob-perms .allowed, html[data-route="onboarding"] 
 .ob-tasks li.done small { color: var(--muted); }
 .sample { display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: 14px; background: var(--card); border: 1px solid var(--line); min-height: 260px; }
 .sample-head { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--faint); font-variant-numeric: tabular-nums; }
-.sample .track { width: 100%; }
-.sample .track i { display: block; height: 100%; background: var(--text); transition: width 0.25s linear; }
-.sample-lines { display: flex; flex-direction: column; gap: 9px; margin-top: 6px; font-size: 12.5px; line-height: 1.5; color: var(--text-2); }
-.sample-lines p { margin: 0; animation: fade-in 0.12s; white-space: pre-wrap; }
-.sample-lines b { color: var(--text); }
 .sample-cue { margin: auto 0 0; padding: 10px 12px; border-radius: 10px; background: rgba(123, 143, 255, 0.1); font-size: 12px; line-height: 1.5; color: var(--text-2); }
 .tryit-foot { grid-column: 1 / -1; max-width: none; }
-@media (max-width: 1000px) { .ob-page.tryit { grid-template-columns: minmax(0, 1fr); } .sample { min-height: 180px; } }
+@media (max-width: 1000px) { .ob-page.tryit { grid-template-columns: minmax(0, 1fr); } .sample { min-height: 0; } }
 .note { font-size: 12px; color: var(--muted); }
 kbd { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; padding: 1px 5px; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 5px; background: var(--surface); color: var(--text); }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
@@ -1244,3 +1239,27 @@ html[data-route="followup"] body { background: #1b1c23; color: var(--text); font
    screen show through. */
 html.glass :is(.surface:not(.failing), .popover.options) { background-color: rgb(var(--glass-rgb) / calc(var(--glass-alpha, 0.9) * 0.45)); }
 
+
+/* Setup: use case, mic meter, practice call, last screen */
+.ob-use { text-align: left; transition: background-color 0.12s, border-color 0.12s; }
+.ob-use:hover, .ob-use.on { background: rgba(123, 143, 255, 0.08); border-color: rgba(123, 143, 255, 0.35); }
+.ob-meter { display: inline-flex; align-items: center; margin-top: 4px; font-size: 12px; color: var(--muted); }
+.ob-dev { font-size: 12px; color: var(--muted); }
+.ob-dev summary { cursor: default; }
+.ob-dev span { display: block; margin-top: 4px; }
+.ob-cc { display: flex; flex-direction: column; justify-content: center; align-items: flex-start; gap: 14px; min-height: 112px; padding: 18px 20px; border-radius: 14px; background: #10121c; color: #f4f5fa; }
+.ob-cc p { margin: 0; font-size: 20px; line-height: 1.4; font-weight: 500; animation: fade-in 0.12s; }
+.ob-cc p b { display: block; margin-bottom: 4px; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: #9aa9ff; }
+.ob-cc.voice-1 p b { color: #7ee3a9; }
+.ob-cc .muted { font-size: 13px; line-height: 1.5; color: #a4a8ba; }
+.ob-tasks li .ob-action { margin-top: 8px; }
+.ob-shot { display: flex; flex-direction: column; gap: 6px; margin: 0; }
+.ob-shot img { width: 100%; border-radius: 10px; border: 1px solid var(--line); }
+.ob-shot figcaption, .ob-shot .muted { font-size: 12px; color: var(--muted); }
+.ob-sheet { margin: 4px 0 0; padding: 0 0 0 16px; display: flex; flex-direction: column; gap: 8px; font-size: 13px; line-height: 1.45; color: var(--text-2); }
+.ob-ideas { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; max-width: 560px; }
+.ob-ideas li { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 12px; align-items: baseline; font-size: 13.5px; color: var(--text-2); }
+.ob-ideas kbd { justify-self: start; }
+.ob-check { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); max-width: 620px; }
+.ob-check li.done b { text-decoration: none; }
+@media (max-width: 900px) { .ob-uses, .ob-check { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

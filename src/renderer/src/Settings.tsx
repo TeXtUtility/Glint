@@ -12,7 +12,7 @@ import notes from '../../../CHANGELOG.md?raw'
 import { CapsuleItemView, languageOptions } from './ControlBar'
 import { COMPUTER, ENCRYPTED, glint, isMac, KEY_GONE, OS, patch, useAppState } from './glint'
 import { Icon } from './icons'
-import { defaultMic, openMic, peak, startRecording, usePlayback, type Recording } from './mic'
+import { defaultMic, METER_BARS, openMic, peak, startRecording, usePlayback, type Recording } from './mic'
 import { ConfirmButton, CONSOLES, DraftTextarea, Range, Segmented, useAutosave, withCode } from './ui'
 
 declare const __GLINT_COMMIT__: string // electron.vite.config.ts
@@ -393,7 +393,6 @@ function MicTest() {
   )
 }
 
-const METER_BARS = [6, 10, 14, 9, 5, 5]
 
 // AI
 
@@ -866,7 +865,7 @@ function Transcription({ s }: { s: State }) {
       )}
       {t.engine === 'local' && (
         <Toggle label="Show words as they're spoken" checked={t.liveWords} onChange={(v) => setT({ liveWords: v })}
-          hint="English. The transcript fills in word by word while someone talks, then settles on the final text. Uses a second, streaming model (440 MB) and a little more CPU." />
+          hint="English. The transcript fills in word by word while someone talks, then settles on the final text. Uses a second, streaming model (442 MB) and a little more CPU." />
       )}
       <Row as="label" label="Default spoken language" hint="Change it for one meeting in Meeting options">
         <select value={t.language} onChange={(e) => setT({ language: e.target.value })}>
@@ -1165,7 +1164,7 @@ function CalendarLinkRow() {
 function Voice({ s }: { s: State }) {
   const player = usePlayback()
   const model = {
-    missing: 'The voice model downloads once (40 MB) the first time it\'s needed.',
+    missing: 'The voice model downloads once (38 MB) the first time it\'s needed.',
     downloading: `Downloading the voice model…${s.voiceModelPct !== null ? ` ${s.voiceModelPct}%` : ''}`,
     ready: '',
     failed: 'The voice model failed to load. It will try again next session.',

@@ -77,9 +77,10 @@ export const win: Platform = {
   runInTerminal,
   files,
   calendar: { access: calendar.access, request: calendar.request, events: calendar.events, openSettings: () => {} }, // Outlook asks nothing
-  say: (text) =>
-    spawn(POWERSHELL, psArgs('Add-Type -AssemblyName System.Speech; $s = New-Object System.Speech.Synthesis.SpeechSynthesizer; $s.Rate = 1; $s.Speak($env:GLINT_SAY)'), {
-      env: { ...process.env, GLINT_SAY: text },
+  // `voice` picks a female (0) or male (1) installed voice, when there is one.
+  say: (text, voice) =>
+    spawn(POWERSHELL, psArgs('Add-Type -AssemblyName System.Speech; $s = New-Object System.Speech.Synthesis.SpeechSynthesizer; $s.Rate = 1; if ($env:GLINT_VOICE) { try { $s.SelectVoiceByHints([System.Speech.Synthesis.VoiceGender]$env:GLINT_VOICE) } catch {} }; $s.Speak($env:GLINT_SAY)'), {
+      env: { ...process.env, GLINT_SAY: text, GLINT_VOICE: voice === undefined ? '' : voice === 0 ? 'Female' : 'Male' },
       windowsHide: true,
     }),
   shellPath,

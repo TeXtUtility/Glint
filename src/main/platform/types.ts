@@ -105,7 +105,8 @@ export interface Platform {
     openSettings(): void
   }
   /** Speaks a line through the speakers, for the sample call. */
-  say(text: string): ChildProcess
+  /** `voice`: 0 or 1, two different-sounding voices for the practice call's two people. */
+  say(text: string, voice?: 0 | 1): ChildProcess
   /** PATH for the CLIs Glint runs, as the user's own shell has it. */
   shellPath(): Promise<string>
   /** Reads PATH afresh next time: a command wasn't found, and may have been installed since. */

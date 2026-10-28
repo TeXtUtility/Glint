@@ -89,7 +89,7 @@ export function ControlBar() {
       </div>
 
       {s.namePrompt && !failure && <NameTray key={s.namePrompt.id} s={s} prompt={s.namePrompt} />}
-      {s.callDetected && !s.session && !failure && <CallTray s={s} app={s.callDetected} />}
+      {s.callDetected && !s.session && <CallTray s={s} app={s.callDetected} />}
       <Presence open={open === 'options'}>{(closing) => <MeetingOptions c={c} hidden={hidden} more={moved} closing={closing} onClose={() => setOpen(null)} />}</Presence>
     </div>
   )

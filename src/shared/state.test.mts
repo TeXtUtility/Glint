@@ -14,6 +14,8 @@ test('phase needs onboarding + permissions', () => {
   assert.equal(phase(inApp()), 'app')
   assert.equal(phase({ ...inApp(), permissions: { mic: 'granted', screen: 'denied' } }), 'onboarding')
   assert.equal(phase({ ...inApp(), permissions: { mic: 'denied', screen: 'granted' } }), 'onboarding')
+  // "Skip for now" on the permissions screen: the app opens without them.
+  assert.equal(phase({ ...inApp(), skippedPermissions: true, permissions: { mic: 'denied', screen: 'denied' } }), 'app')
 })
 
 test('normalize clears app fields outside the app phase', () => {
@@ -62,7 +64,12 @@ test('loadPersisted: a bad key falls back on its own instead of resetting everyt
 
 test('capsule layout: new controls show, bad lists fall back, dividers tidy', () => {
   const load = (capsule: unknown) => loadPersisted(JSON.stringify({ capsule })).value.capsule
-  assert.deepEqual(load({ shown: ['ask'], hidden: ['mode'] }), { shown: ['ask', ...CAPSULE_ITEMS.filter((id) => id !== 'ask' && id !== 'mode' && id !== 'humanize')], hidden: ['mode', 'humanize'] })
+  // Controls missing from the file go where a new install has them.
+  const starts = PERSISTED_DEFAULTS.capsule.hidden
+  assert.deepEqual(load({ shown: ['ask'], hidden: ['mode'] }), {
+    shown: ['ask', ...CAPSULE_ITEMS.filter((id) => id !== 'ask' && id !== 'mode' && !starts.includes(id))],
+    hidden: ['mode', ...CAPSULE_ITEMS.filter((id) => id !== 'mode' && starts.includes(id))],
+  })
   assert.deepEqual(load({ shown: ['ask', 'ask'], hidden: [] }), PERSISTED_DEFAULTS.capsule)
   assert.deepEqual(load({ shown: ['bogus'], hidden: [] }), PERSISTED_DEFAULTS.capsule)
   assert.deepEqual(load(null), PERSISTED_DEFAULTS.capsule)

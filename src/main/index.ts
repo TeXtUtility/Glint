@@ -1,5 +1,5 @@
 import {
-  app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nativeTheme, net, Notification, powerMonitor, protocol, safeStorage,
+  app, BrowserWindow, clipboard, desktopCapturer, dialog, ipcMain, Menu, nativeImage, nativeTheme, net, Notification, powerMonitor, protocol, safeStorage,
   session as electronSession, shell, screen, Tray, type IpcMainEvent, type IpcMainInvokeEvent, type MenuItemConstructorOptions,
 } from 'electron'
 import type { ChildProcess } from 'node:child_process'
@@ -8,8 +8,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { format } from 'node:util'
-import { askEffort, elapsedMs, formatElapsed, GHOST_FONT_RANGE, GHOST_OPACITY_RANGE, isLanguageCode, NOTE_MAX, phase, searchesFiles, type AskPayload, type KeyProvider, type Mode, type Session, type ShortcutAction, type State } from '../shared/state'
-import { NAME_GUESS_SYSTEM_PROMPT, nameGuessContext, nameGuessQuestion, parseNameGuess, SAMPLE_CALL, systemPrompt, WEB_SEARCH_PROMPT } from '../shared/prompt'
+import { askEffort, elapsedMs, formatElapsed, GHOST_FONT_RANGE, GHOST_OPACITY_RANGE, isLanguageCode, NOTE_MAX, phase, PRACTICE_IDS, searchesFiles, type AskPayload, type KeyProvider, type Mode, type PracticeId, type Session, type ShortcutAction, type State, type TranscriptItem } from '../shared/state'
+import { NAME_GUESS_SYSTEM_PROMPT, nameGuessContext, nameGuessQuestion, parseNameGuess, PRACTICE_CALLS, systemPrompt, WEB_SEARCH_PROMPT } from '../shared/prompt'
 import { transcriptText } from '../shared/history'
 import { HUMANIZER_LABELS, HUMANIZERS, humanizes, type HumanizerConfig, type HumanizerService } from '../shared/humanize'
 import { scrub } from '../shared/markdown'
@@ -195,8 +195,10 @@ function boot() {
   void readyProviders().then((ready) => {
     const order = readyFirst(getState().ai, ready)
     if (order) patchState({ ai: order })
-    if (!ready.size) noAi()
+    if (!ready.size && getState().onboardingDone) noAi()
   })
+  // Setup has its own AI step: the alarm waits until setup is done, then says so if it was skipped.
+  subscribe((s, prev) => s.onboardingDone && !prev.onboardingDone && void readyProviders().then((ready) => !ready.size && noAi()))
   if (pendingLink) handleLink(pendingLink)
   pendingLink = null
 }
@@ -205,13 +207,17 @@ function boot() {
  * Nothing can answer (no key, and no Claude Code or Codex signed in): said at launch, in a notification that opens
  * Settings → AI and on the capsule, rather than by the first ask failing. The first answer that works clears it.
  */
+const NO_AI = 'No AI set up: add one in Settings → AI'
 function noAi() {
-  patchState({ aiFailure: 'No AI set up: add one in Settings → AI' })
+  patchState({ aiFailure: NO_AI })
   if (!Notification.isSupported()) return
   const n = new Notification({ title: 'Glint has no AI to answer with', body: 'Add a Claude or OpenAI key, or sign in to Claude Code or Codex. Click to open Settings → AI.' })
   n.on('click', () => openSettings('ai'))
   n.show()
 }
+
+/** An AI was just set up: the no-AI alarm, if it's up, has nothing left to say. */
+const aiReady = () => getState().aiFailure === NO_AI && patchState({ aiFailure: null })
 
 /** The system prompt for an ask, in cached blocks: the mode's reference files, then the instructions. */
 const askSystem = (mode: Mode | undefined) =>
@@ -321,7 +327,7 @@ const RENDERER_PATCHABLE = new Set([
   'chat', 'overlayVisible', 'isInvisible', 'lockFocusWhenInvisible', 'discreet', 'opacity', 'screenContext', 'screenshotNote', 'theme', 'openAtLogin', 'onboardingDone',
   'ai', 'transcription', 'activeModeId', 'vad', 'shortcuts', 'isRecordingShortcut', 'audioError', 'inactivityPrompt',
   'voice', 'roomMode', 'speakerLabels', 'autoCopy', 'layout', 'glance', 'aiFailure', 'smart', 'practicing', 'teach', 'updateChannel',
-  'terminalApp', 'runNewWindow', 'compactBar', 'openAtLoginInitialized', 'devTools', 'humanizer', 'capsule', 'ghostAutoSkip', 'meetingPrompt', 'saveChats', 'afterCall',
+  'terminalApp', 'runNewWindow', 'compactBar', 'openAtLoginInitialized', 'devTools', 'humanizer', 'capsule', 'ghostAutoSkip', 'meetingPrompt', 'saveChats', 'afterCall', 'useCase', 'skippedPermissions',
 ])
 
 function trusted(e: IpcMainEvent | IpcMainInvokeEvent) {
@@ -459,8 +465,17 @@ function registerIpc() {
   // Window errors land in main's log, with everything else a bug report needs.
   on('app:renderer-error', (e, msg: unknown) => console.error(`[renderer ${routeOf(e.sender.getURL())}]`, String(msg).slice(0, 2000)))
   handle('models:remove-unused', () => removeUnusedModels(getState()))
-  handle('practice:say', (_e, i: unknown) => sayLine(Number(i)))
+  on('practice:start', (_e, id: unknown) => startPractice(id))
+  handle('practice:say', (_e, i: unknown) => practiceLine(Number(i)))
   on('practice:stop', stopSaying)
+  on('practice:end', () => getState().session?.practice && void stopSession())
+  // What a screen share sees right now: Glint's windows are left out of captures, so they aren't in it.
+  handle('practice:screen', async () => {
+    if (getState().permissions.screen !== 'granted') return null
+    const { width, height } = screen.getPrimaryDisplay().size
+    const [src] = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width, height } })
+    return src && !src.thumbnail.isEmpty() ? src.thumbnail.resize({ width: Math.min(width, 1600) }).toDataURL() : null
+  })
 
   on('session:start', startSession)
   on('call:dismiss', () => patchState({ callDetected: null }))
@@ -549,6 +564,18 @@ function registerIpc() {
     let tokens = ''
     let searched = ''
     try {
+      // A practice call with no AI set up yet (setup's "Set it up later"): its sample answer, rather than a failure.
+      const practice = getState().session?.practice
+      if (practice && !(await readyProviders()).size) {
+        outcome = 'practice sample'
+        for (const w of `**Sample answer.** Add an AI in Settings → AI to get real ones.\n\n${PRACTICE_CALLS[practice].sample}`.match(/\S+\s*/g) ?? []) {
+          send('ai:delta', { id: p.id, text: w })
+          await new Promise((r) => setTimeout(r, 25))
+        }
+        return { provider: ai.provider, failures: [] }
+      }
+      // The practice call's sheet sits in setup's window, which captures leave out, so it's sent as text instead.
+      if (practice) p = { ...p, reference: [PRACTICE_CALLS[practice].material.title, ...PRACTICE_CALLS[practice].material.rows].join('\n') }
       const system = askSystem(mode)
       // Fast unless smart mode is on; Glance's one-line answers are always fast.
       p = { ...p, effort: askEffort({ layout, smart }, p) }
@@ -596,13 +623,14 @@ function registerIpc() {
   on('ai:cancel', (_e, id: string) => asks.get(id)?.abort())
   handle('ai:cli-status', (_e, provider: string) => {
     if (provider !== 'claude-cli' && provider !== 'codex-cli') throw new Error('unknown provider')
-    return cliStatus(provider)
+    return cliStatus(provider).then((r) => (r.ok && aiReady(), r))
   })
   handle('ai:set-key', (_e, provider: KeyProvider, key: string | null) => {
     if (provider !== 'anthropic' && provider !== 'openai') throw new Error('unknown provider')
     const clean = typeof key === 'string' ? key.trim() : ''
     if (clean.length > 500) throw new Error('That key is too long.')
     setKey(provider, clean || null)
+    if (clean) aiReady()
     patchState({ aiKeys: keyStatus() })
   })
 
@@ -940,14 +968,32 @@ function buildAppMenu() {
   )
 }
 
-/** "Jordan", the sample call's other side, spoken with the computer's own voice so the call capture hears it. */
+/**
+ * Setup's practice call (PRACTICE_CALLS): a session that records nothing. Each line is written into the transcript as
+ * it's spoken, so it works muted, before the speech model is downloaded, and without the screen permission.
+ */
+function startPractice(id: unknown) {
+  if (!PRACTICE_IDS.includes(id as PracticeId) || !canBegin()) return
+  const practice = id as PracticeId
+  const [a, b] = PRACTICE_CALLS[practice].people
+  beginSession({
+    id: randomUUID(), chatId: randomUUID(), language: 'en', transcript: [], startedAt: Date.now(), isResumed: false, priorElapsedMs: 0,
+    mode: 'Practice call', practice, speakers: { 'practice-0': a, 'practice-1': b },
+  }, false)
+}
+
+/** One of the practice call's lines, by index: into the transcript, then spoken in that person's voice. */
 let saying: ChildProcess | null = null
-function sayLine(i: number): Promise<void> {
+function practiceLine(i: number): Promise<void> {
   stopSaying()
-  const line = SAMPLE_CALL[i]
-  if (!line) return Promise.resolve()
+  const s = getState().session
+  const line = s?.practice ? PRACTICE_CALLS[s.practice].lines[i] : undefined
+  if (!s || !line) return Promise.resolve()
+  const now = Date.now()
+  const item: TranscriptItem = { role: 'them', at: new Date(now).toISOString(), offsetMs: now - s.startedAt + s.priorElapsedMs, status: 'ready', text: line.text, speaker: `practice-${line.who}` }
+  patchState({ session: { ...s, transcript: [...s.transcript, item] } })
   return new Promise((resolve) => {
-    const p = platform.say(line.text)
+    const p = platform.say(line.text, line.who)
     saying = p
     p.on('close', () => resolve())
     p.on('error', () => resolve())

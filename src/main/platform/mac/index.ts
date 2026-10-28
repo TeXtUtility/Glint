@@ -16,6 +16,11 @@ import { requestKeys, stopKeys, watchKeys } from './keys'
 import { makeKey, preventActivation, refitGlass, setGlass } from './panel'
 import { runInTerminal, terminals } from './terminal'
 
+/** Two voices that come with macOS; one that's been removed falls back to the default voice. */
+const PRACTICE_VOICES = ['Samantha', 'Daniel'] as const
+let voices: string | null = null
+const hasVoice = (name: string) => (voices ??= spawnSync('/usr/bin/say', ['-v', '?'], { encoding: 'utf8', timeout: 5000 }).stdout ?? '').split('\n').some((l) => l.startsWith(`${name} `))
+
 const pane = (name: string) => shell.openExternal(`x-apple.systempreferences:com.apple.preference.security?Privacy_${name}`)
 
 /**
@@ -131,7 +136,7 @@ export const mac: Platform = {
   runInTerminal,
   files,
   calendar: { ...calendar, openSettings: () => void pane('Calendars') },
-  say: (text) => spawn('/usr/bin/say', ['-r', '185', text]),
+  say: (text, voice) => spawn('/usr/bin/say', ['-r', '185', ...(voice !== undefined && hasVoice(PRACTICE_VOICES[voice]) ? ['-v', PRACTICE_VOICES[voice]] : []), text]),
   shellPath,
   forgetShellPath,
   cliCommand,

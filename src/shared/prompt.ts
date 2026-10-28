@@ -1,5 +1,6 @@
 import type { ActionItem } from './history'
 import { toPlain } from './markdown.ts'
+import type { PracticeId } from './state.ts'
 import { searchesFiles, type AskPayload, type Mode, type TranscriptItem } from './state.ts'
 
 export const SYSTEM_PROMPT = `You are Glint, an assistant in a small overlay on the user's screen, often during a live meeting, call, class or interview, or while they work or study.
@@ -78,12 +79,96 @@ ${extra}
 </mode_instructions>`
 }
 
-/** Onboarding's sample call: what "Jordan" says, and when (seconds from the start), out of SAMPLE_CALL_S. */
-export const SAMPLE_CALL = [
-  { at: 2, text: 'Thanks for making time. Tell me about a project you led end to end.' },
-  { at: 26, text: 'And what would you do differently now?' },
-]
-export const SAMPLE_CALL_S = 48
+/**
+ * Setup's practice calls, one per use: two people (voice 0 and 1, see platform.say), their lines with when they start
+ * (seconds from the start), the line after which the user is asked something (`ask`, the call waits for their ⌘↩), what
+ * sits on screen for the screenshot to read, the mode template it turns on, and the answer shown without an AI.
+ */
+export const PRACTICE_CALLS: Record<PracticeId, {
+  title: string
+  people: [string, string]
+  lines: { who: 0 | 1; at: number; text: string }[]
+  ask: number
+  cue: string
+  material: { title: string; rows: string[] }
+  template: string
+  sample: string
+}> = {
+  sales: {
+    title: 'A sales call',
+    people: ['Dana', 'Marco'],
+    lines: [
+      { who: 0, at: 1, text: 'Thanks for the demo. It looks really good.' },
+      { who: 1, at: 5, text: 'We would have about forty people on the support team using it.' },
+      { who: 0, at: 11, text: 'My worry is the price. Your Team plan costs more than what we pay now.' },
+      { who: 1, at: 18, text: 'And we need single sign on before IT will approve anything.' },
+      { who: 0, at: 24, text: 'So what would forty seats cost us, and is single sign on included?' },
+      { who: 0, at: 0, text: 'That helps. Can you send that over by Friday?' },
+      { who: 1, at: 5, text: 'Great. Let us talk again next week.' },
+    ],
+    ask: 4,
+    cue: 'Dana asked you about price.',
+    material: { title: 'Pricing', rows: ['Starter: $8 a seat a month, no single sign-on', 'Team: $16 a seat a month, single sign-on included', '20 seats or more: 10% off', 'Enterprise: custom pricing'] },
+    template: 'sales',
+    sample: 'Forty seats on Team is $640 a month, or $576 with the 10% discount for 20 seats or more. Single sign-on is included on Team.',
+  },
+  team: {
+    title: 'A team meeting',
+    people: ['Priya', 'Sam'],
+    lines: [
+      { who: 0, at: 1, text: 'Okay, quick stand up. Sam, where is the billing page?' },
+      { who: 1, at: 6, text: 'Design is done. I am waiting on the new prices from finance.' },
+      { who: 0, at: 12, text: 'Finance said they would send them today.' },
+      { who: 1, at: 16, text: 'Then I can ship it on Thursday.' },
+      { who: 0, at: 21, text: 'Great. And you have the onboarding emails. When can I see a first draft?' },
+      { who: 0, at: 0, text: 'Perfect. So Sam ships billing on Thursday, and the emails come after. Thanks, everyone.' },
+    ],
+    ask: 4,
+    cue: 'Priya asked you when the draft is ready.',
+    material: { title: 'Team board', rows: ['Billing page: Sam, in progress, waiting on prices', 'Onboarding emails: you, draft due Wednesday', 'Release: Friday'] },
+    template: 'team-meeting',
+    sample: 'Say: "The first draft is due Wednesday, so you\'ll have it by then." The board has you on the onboarding emails, due Wednesday, ahead of Friday\'s release.',
+  },
+  hiring: {
+    title: 'A hiring interview',
+    people: ['Maya', 'Alex'],
+    lines: [
+      { who: 0, at: 1, text: 'Thanks for joining, Alex. Could you tell us about a project you led?' },
+      { who: 1, at: 6, text: 'Sure. I led the move of our app to a new database. It went well, and we finished on time.' },
+      { who: 0, at: 14, text: 'What was the hardest part?' },
+      { who: 1, at: 17, text: 'Mostly coordinating people. A lot of teams were involved.' },
+      { who: 0, at: 23, text: 'Okay. Over to you for a follow up question.' },
+      { who: 1, at: 0, text: 'Good question. Let me think about that for a second.' },
+    ],
+    ask: 4,
+    cue: 'Maya handed you the next question.',
+    material: { title: 'Scorecard: Alex', rows: ['Ownership: what they did themselves', 'Technical depth: specifics, numbers, trade-offs', 'Handling conflict'] },
+    template: 'interviewer',
+    sample: 'Alex stayed vague: no numbers, and nothing on what they did themselves. Ask: "Which part of the database move did you own, and what broke along the way?"',
+  },
+  lecture: {
+    title: 'A lecture',
+    people: ['Jamie', 'Professor Lee'],
+    lines: [
+      { who: 1, at: 1, text: 'Today, supply and demand. When the price goes up, people buy less. That is why the demand curve slopes down.' },
+      { who: 1, at: 10, text: 'Supply slopes up. At higher prices, sellers want to sell more.' },
+      { who: 1, at: 16, text: 'Where the two curves cross is the equilibrium price.' },
+      { who: 0, at: 21, text: 'So what happens if the government sets a price ceiling below that?' },
+      { who: 1, at: 26, text: 'Good question. Does anyone know?' },
+      { who: 1, at: 0, text: 'Exactly. Hold that thought, we will come back to it next week.' },
+    ],
+    ask: 4,
+    cue: 'Professor Lee asked the class.',
+    material: { title: 'Slide 4: Supply and demand', rows: ['Demand slopes down: higher price, fewer buyers', 'Supply slopes up: higher price, more sellers', 'Equilibrium: where quantity supplied equals quantity demanded'] },
+    template: 'lecture',
+    sample: 'A price ceiling below equilibrium causes a shortage: at the lower price, people want to buy more than sellers want to sell. Rent control is the classic example.',
+  },
+}
+/** Lines after `ask` play once the user has asked (their `at` counts from then). */
+export const practiceSplit = (id: PracticeId) => {
+  const c = PRACTICE_CALLS[id]
+  return { before: c.lines.slice(0, c.ask + 1), after: c.lines.slice(c.ask + 1) }
+}
 
 /** `name` is the mode's name once added; `title`, `blurb` and `tip` are for the template picker. */
 export const MODE_TEMPLATES: (Pick<Mode, 'name' | 'prompt'> & { id: string; group: 'interviewed' | 'work'; title: string; blurb: string; tip: string })[] = [

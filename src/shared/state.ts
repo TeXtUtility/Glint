@@ -28,7 +28,12 @@ export interface Session {
   speakers?: Record<string, string>
   /** The mode active when the session started, by name. */
   mode?: string
+  /** Setup's practice call: no audio is recorded, its script's lines are written in as they're spoken. */
+  practice?: PracticeId
 }
+
+export type PracticeId = 'sales' | 'team' | 'hiring' | 'lecture'
+export const PRACTICE_IDS: PracticeId[] = ['sales', 'team', 'hiring', 'lecture']
 
 /** Blank: no shortcut until the user records one. */
 export const DEFAULT_SHORTCUTS = {
@@ -207,6 +212,7 @@ export const CAPSULE_ITEMS = [
   'activity', 'divider-1', 'mode', 'divider-2', 'screen', 'humanize', 'invisible', 'room', 'labels', 'divider-3', 'session', 'divider-4', 'chat', 'ask',
 ] as const
 export type CapsuleItem = (typeof CAPSULE_ITEMS)[number]
+const STARTER_CAPSULE: CapsuleItem[] = ['activity', 'divider-1', 'mode', 'divider-3', 'session', 'divider-4', 'chat', 'ask']
 export const isDivider = (id: CapsuleItem) => id.startsWith('divider')
 /** Drops the dividers a layout leaves at the end or next to another divider. A leading one stays: it follows the status. */
 export const tidyDividers = (ids: CapsuleItem[]) => ids.filter((id, i) => !isDivider(id) || (i < ids.length - 1 && !isDivider(ids[i + 1])))
@@ -291,6 +297,10 @@ export interface Persisted {
    * as soon as the notes are written.
    */
   afterCall: { notesPrompt: string; emailPrompt: string; autoDraft: boolean }
+  /** What setup was told Glint is for first; it picked the practice call and the mode turned on. 'other': none. */
+  useCase: PracticeId | 'other' | null
+  /** Setup was finished without every permission. Glint runs anyway, and setup isn't brought back for them. */
+  skippedPermissions: boolean
   /** Ghost jumps ahead by itself when the user skips, swaps or adds words, or clicks into the next field. Off: only ⌃⌥⌘← → skip. */
   ghostAutoSkip: boolean
   /** macOS: the "move to Applications?" offer is made once. */
@@ -444,8 +454,12 @@ export const PERSISTED_DEFAULTS: Persisted = {
   meetingPrompt: true,
   saveChats: false,
   afterCall: { notesPrompt: '', emailPrompt: '', autoDraft: true },
+  useCase: null,
+  skippedPermissions: false,
   movePromptShown: false,
-  capsule: { shown: CAPSULE_ITEMS.filter((id) => id !== 'humanize'), hidden: ['humanize'] },
+  // New installs start small: what the first calls use is on the capsule, the rest waits in Meeting options (the
+  // dashed edge still shows invisible mode). Saved layouts are kept.
+  capsule: { shown: [...STARTER_CAPSULE], hidden: CAPSULE_ITEMS.filter((id) => !STARTER_CAPSULE.includes(id)) },
 }
 
 const CHAT_DEFAULT: State['chat'] = { visible: false, expanded: false, view: 'chat', isStreaming: false }
@@ -505,7 +519,7 @@ export const INACTIVITY_COUNTDOWN_S = 40
 export function phase(s: State): 'onboarding' | 'app' {
   // A permission taken back after setup brings setup back, to say which and where to allow it. Windows has no screen
   // permission (it reports it granted); its mic one is the Privacy switch for every desktop app.
-  const permsOk = s.permissions.mic === 'granted' && s.permissions.screen === 'granted'
+  const permsOk = (s.permissions.mic === 'granted' && s.permissions.screen === 'granted') || s.skippedPermissions
   return (s.onboardingDone || s.practicing) && permsOk ? 'app' : 'onboarding'
 }
 
@@ -600,6 +614,8 @@ const VALID: { [K in keyof Persisted]: (v: Persisted[K]) => boolean } = {
   saveChats: bool,
   afterCall: (a) => typeof a.notesPrompt === 'string' && a.notesPrompt.length <= AFTER_CALL_PROMPT_MAX &&
     typeof a.emailPrompt === 'string' && a.emailPrompt.length <= AFTER_CALL_PROMPT_MAX && typeof a.autoDraft === 'boolean',
+  useCase: (v) => v === null || v === 'other' || PRACTICE_IDS.includes(v),
+  skippedPermissions: bool,
   movePromptShown: bool,
   capsule: (c) => {
     if (!isObj(c) || !Array.isArray(c.shown) || !Array.isArray(c.hidden)) return false

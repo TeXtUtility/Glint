@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { cliPrompt, composeNote, followUpSystem, NOTES_INSTRUCTIONS, notesSystem, NOTES_SYSTEM_PROMPT, followUpPrompt, meetingDay, parseFollowUp, GLANCE_PROMPT, isRetry, REFERENCE_PROMPT, RETRY_PROMPT, nameGuessContext, nameGuessQuestion, parseNameGuess, lineKey, MODE_TEMPLATES, notesPrompt, parseClaudeLine, parseNotes, recentHistory, SYSTEM_PROMPT, systemPrompt, unsentLines, userPrompt, wrapText } from './prompt.ts'
+import { cliPrompt, composeNote, followUpSystem, NOTES_INSTRUCTIONS, notesSystem, NOTES_SYSTEM_PROMPT, followUpPrompt, meetingDay, parseFollowUp, GLANCE_PROMPT, isRetry, REFERENCE_PROMPT, RETRY_PROMPT, nameGuessContext, nameGuessQuestion, parseNameGuess, lineKey, MODE_TEMPLATES, PRACTICE_CALLS, practiceSplit, notesPrompt, parseClaudeLine, parseNotes, recentHistory, SYSTEM_PROMPT, systemPrompt, unsentLines, userPrompt, wrapText } from './prompt.ts'
 
 test('userPrompt includes transcript and falls back to an implicit ask', () => {
   const p = userPrompt({ text: '', hasSession: true, transcript: [{ role: 'them', text: 'Any questions?' }] })
@@ -177,4 +177,13 @@ test('notes and email instructions can be replaced, and the reply format is alwa
   const email = followUpSystem('Sign off as Ezra.')
   assert.ok(email.startsWith('Sign off as Ezra.') && email.includes('SUBJECT:') && email.includes('BODY:'))
   assert.equal(followUpSystem('   '), followUpSystem())
+})
+
+test('practice calls: a real template, lines after the pause, lines in time order', () => {
+  for (const [id, c] of Object.entries(PRACTICE_CALLS)) {
+    assert.ok(MODE_TEMPLATES.some((t) => t.id === c.template), id)
+    const { before, after } = practiceSplit(id as keyof typeof PRACTICE_CALLS)
+    assert.ok(after.length > 0, id)
+    for (const part of [before, after]) part.forEach((l, i) => i && assert.ok(l.at > part[i - 1].at, `${id} line ${i}`))
+  }
 })

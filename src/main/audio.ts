@@ -103,7 +103,7 @@ export function initAudio() {
 function sync(s: State) {
   if (finishing && s.session) return // don't restart capture while the last lines of the session finish
   finishing = false
-  const want = !!s.session && !s.pause.paused && phase(s) === 'app'
+  const want = !!s.session && !s.session.practice && !s.pause.paused && phase(s) === 'app' // practice calls record nothing
   if (pipes) for (const role of ROLES) pipes[role].stream.seg.o = s.vad // tuning applies mid-session
   if (want && !capturing) void start()
   else if (!want && capturing) stop(!!s.session)
