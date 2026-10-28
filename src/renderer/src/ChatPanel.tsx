@@ -640,7 +640,7 @@ export function ChatPanel() {
           onClick={chat.isStreaming ? stop : () => void ask()}>
           <span key={chat.isStreaming ? 'stop' : 'send'} className="swap">{chat.isStreaming ? <i className="stop-square" /> : <Icon name="arrowUp" size={16} />}</span>
         </button>
-        <button className={`circle toggle bulb ${s.smart ? 'on' : ''}`} aria-label="Smart mode" aria-pressed={s.smart}
+        <button className={`circle toggle bulb ${s.smart ? 'on' : ''} ${s.teach === 'smart' && !s.smart ? 'teach' : ''}`} aria-label="Smart mode" aria-pressed={s.smart}
           data-tip={s.smart ? 'Smart mode on: thinks it through and answers thoroughly (slower)' : 'Smart mode off: fast answers'}
           onClick={() => patch({ smart: !s.smart })}>
           <Icon name="bulb" filled={s.smart} />

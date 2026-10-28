@@ -5,6 +5,7 @@ import { prettyAccelerator, speechModelFor, type AiProvider, type KeyProvider, t
 import { COMPUTER, glint, isMac, patch, SYSTEM_SETTINGS, useAppState } from './glint'
 import { Icon } from './icons'
 import { METER_BARS, openMic, peak } from './mic'
+import { CHECKLIST } from '../../shared/tips'
 import { CONSOLES, withCode } from './ui'
 
 const PERMS = isMac
@@ -17,26 +18,27 @@ const PERMS = isMac
     ] as const
   : ([{ kind: 'mic', icon: 'mic', name: 'Microphone', why: 'To transcribe what you say. Windows turns it on for all desktop apps at once.' }] as const)
 
-type Step = 'use' | 'permissions' | 'ai' | 'practice' | 'ready'
-const STEP_LABELS: Record<Step, string> = { use: 'Start', permissions: 'Permissions', ai: 'AI', practice: 'Practice call', ready: 'Done' }
-/** What the practice call got through, for the checklist on the last screen. */
-type Did = { heard: boolean; asked: boolean }
+type Step = 'use' | 'permissions' | 'ai' | 'practice' | 'mode' | 'try' | 'ready'
+const STEP_LABELS: Record<Step, string> = {
+  use: 'Start', permissions: 'Permissions', ai: 'AI', practice: 'Practice call', mode: 'Your mode', try: 'Ask anything', ready: 'Done',
+}
 
 export function Onboarding() {
   const s = useAppState()
   const [step, setStep] = useState<Step | null>(null)
   const [dir, setDir] = useState(1)
-  const [fast, setFast] = useState(false) // "I've used Glint before": no practice call
-  const [did, setDid] = useState<Did>({ heard: false, asked: false })
+  const [fast, setFast] = useState(false) // "I've used Glint before": straight to the app after the AI
   const [speech, setSpeech] = useState<string | null | undefined>(undefined) // undefined: loading; null: ready
   useEffect(() => void glint.invoke<string | null>('stt:prepare').then(setSpeech), [])
-  if (!s) return null
+  // Each screen reached goes in the log, so a bug report shows where setup stopped.
+  const current: Step | null = !s ? null : step ?? (s.onboardingDone || (isMac && PERMS.some((p) => s.permissions[p.kind] === 'granted')) ? 'permissions' : 'use')
+  useEffect(() => void (current && glint.send('setup:step', current)), [current])
+  if (!s || !current) return null
 
-  // Already onboarded but a permission was revoked, or back from the relaunch Screen Recording needs: start on
+  // (Above) already onboarded but a permission was revoked, or back from the relaunch Screen Recording needs: start on
   // permissions.
-  const current = step ?? (s.onboardingDone || (isMac && PERMS.some((p) => s.permissions[p.kind] === 'granted')) ? 'permissions' : 'use')
   const only = s.onboardingDone // a revoked permission: nothing else to show
-  const steps: Step[] = only ? ['permissions'] : fast ? ['use', 'permissions', 'ai'] : ['use', 'permissions', 'ai', 'practice', 'ready']
+  const steps: Step[] = only ? ['permissions'] : fast ? ['use', 'permissions', 'ai'] : ['use', 'permissions', 'ai', 'practice', 'mode', 'try', 'ready']
   const go = (to: Step) => (setDir(steps.indexOf(to) >= steps.indexOf(current) ? 1 : -1), setStep(to))
   const finish = () => {
     glint.send('practice:stop')
@@ -47,22 +49,24 @@ export function Onboarding() {
 
   return (
     <div className="ob">
-      <Rail s={s} steps={steps} current={current} />
+      <Rail s={s} steps={steps} current={current} speech={speech} />
       <main className="ob-main" key={current} style={{ '--from': `${dir * 24}px` } as React.CSSProperties}>
         {current === 'use' && <UseCase s={s} onNext={() => go('permissions')} onFast={() => (setFast(true), go('permissions'))} />}
         {current === 'permissions' && (
-          <Permissions s={s} speech={speech} onBack={only ? undefined : () => go('use')}
+          <Permissions s={s} onBack={only ? undefined : () => go('use')}
             onContinue={() => (only ? void patch({ onboardingDone: true }) : go('ai'))} />
         )}
         {current === 'ai' && <AiSetup s={s} onBack={() => go('permissions')} onContinue={() => (fast ? finish() : go('practice'))} />}
-        {current === 'practice' && <Practice s={s} id={practice} onDone={(d) => (setDid(d), go('ready'))} />}
-        {current === 'ready' && <Ready s={s} did={did} onDone={finish} />}
+        {current === 'practice' && <Practice s={s} id={practice} onDone={() => go('mode')} />}
+        {current === 'mode' && <YourMode s={s} onDone={() => go('try')} />}
+        {current === 'try' && <AskAnything s={s} onDone={() => go('ready')} />}
+        {current === 'ready' && <Ready s={s} onDone={finish} />}
       </main>
     </div>
   )
 }
 
-function Rail({ s, steps, current }: { s: State; steps: Step[]; current: Step }) {
+function Rail({ s, steps, current, speech }: { s: State; steps: Step[]; current: Step; speech: string | null | undefined }) {
   const at = steps.indexOf(current)
   const granted = PERMS.filter((p) => s.permissions[p.kind] === 'granted').length
   return (
@@ -80,7 +84,11 @@ function Rail({ s, steps, current }: { s: State; steps: Step[]; current: Step })
           </li>
         ))}
       </ol>
-      {current === 'use' && <p className="ob-rail-foot">Glint {s.appVersion}</p>}
+      {/* The speech model downloads from the first screen; its progress follows you through setup. */}
+      <div className="ob-rail-foot">
+        <SpeechStatus s={s} speech={speech} />
+        {current === 'use' && <span>Glint {s.appVersion}</span>}
+      </div>
     </nav>
   )
 }
@@ -135,9 +143,7 @@ function UseCase({ s, onNext, onFast }: { s: State; onNext: () => void; onFast: 
   )
 }
 
-function Permissions({ s, speech, onBack, onContinue }: {
-  s: State; speech: string | null | undefined; onBack?: () => void; onContinue: () => void
-}) {
+function Permissions({ s, onBack, onContinue }: { s: State; onBack?: () => void; onContinue: () => void }) {
   const [askedScreen, setAskedScreen] = useState(false)
   // Asked once, on the first run through: applied on Continue, so macOS's "background item added" notice follows a choice.
   const [login, setLogin] = useState(true)
@@ -183,7 +189,6 @@ function Permissions({ s, speech, onBack, onContinue }: {
         </label>
       )}
       <div className="ob-foot">
-        <SpeechStatus s={s} speech={speech} />
         <span className="grow" />
         {onBack && <button className="ob-back" onClick={onBack}>Back</button>}
         {next ? <button className="ob-back" onClick={() => leave(true)}>Skip for now</button>
@@ -330,12 +335,14 @@ const ASK_WAIT_MS = 30_000
 type Beat = 'idle' | 'talking' | 'ask' | 'ended'
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
-function Practice({ s, id, onDone }: { s: State; id: PracticeId; onDone: (did: Did) => void }) {
+function Practice({ s, id, onDone }: { s: State; id: PracticeId; onDone: () => void }) {
   const call = PRACTICE_CALLS[id]
   const k = (a: ShortcutAction) => prettyAccelerator(s.shortcuts[a], isMac)
   const [beat, setBeat] = useState<Beat>('idle')
   const [caption, setCaption] = useState<{ who: 0 | 1; text: string } | null>(null)
-  const [asked, setAsked] = useState(false)
+  const [asked, setAsked] = useState(false) // the answer has started: the call waits for it to finish
+  const since = useRef(Date.now())
+  const answered = !!s.lastAnswer?.inSession && s.lastAnswer.at > since.current // an answer that failed doesn't tick
   const [shot, setShot] = useState<string | null | undefined>(undefined) // undefined: not looked yet; null: no screen permission
   const [hide, setHide] = useState<0 | 1 | 2>(0) // hidden once, then back
   const alive = useRef(true)
@@ -405,7 +412,7 @@ function Practice({ s, id, onDone }: { s: State; id: PracticeId; onDone: (did: D
   const look = () => void glint.invoke<string | null>('practice:screen').then(setShot, () => setShot(null))
   const ended = beat === 'ended'
   const tasks = [
-    { done: asked, title: `${call.cue} Press ${k('ask')}`, sub: `From any app. Glint reads what was said and the ${call.material.title.toLowerCase()}, then answers in the overlay.` },
+    { done: answered, title: `${call.cue} Press ${k('ask')}`, sub: `From any app. Glint reads what was said and the ${call.material.title.toLowerCase()}, then answers in the overlay.` },
     { done: shot !== undefined, title: 'See what a screen share sees', sub: "Glint's windows aren't in it.", action: { label: 'Show me', run: look } },
     { done: hide === 2, title: `Press ${k('toggleOverlay')} to hide Glint, then again to bring it back`, sub: 'Works from any app.' },
     { done: ended, title: 'Get the notes', sub: 'The call ends by itself. Summary, action items and a follow-up email open in the overlay.' },
@@ -449,47 +456,162 @@ function Practice({ s, id, onDone }: { s: State; id: PracticeId; onDone: (did: D
         <p className="sample-cue">Glint uses what's on your screen too. This sheet is for the practice call.</p>
       </aside>
       <div className="ob-foot tryit-foot">
-        <button className="ob-back" onClick={() => onDone({ heard: ended, asked })}>Skip practice</button>
+        <button className="ob-back" onClick={onDone}>Skip practice</button>
         <span className="grow" />
-        <button className={`ob-primary ${ended ? '' : 'waiting'}`} onClick={() => onDone({ heard: ended, asked })}>Continue</button>
+        <button className={`ob-primary ${ended ? '' : 'waiting'}`} onClick={onDone}>Continue</button>
       </div>
     </div>
   )
 }
 
-/** The four ideas, each with its key, and the checklist so far. */
-function Ready({ s, did, onDone }: { s: State; did: Did; onDone: () => void }) {
+/** The mode setup turned on, made the user's own: its name, its instructions, and files to answer from. Or one from scratch. */
+function YourMode({ s, onDone }: { s: State; onDone: () => void }) {
+  const mode = s.modes.find((m) => m.id === s.activeModeId)
+  const [name, setName] = useState(mode?.name ?? '')
+  const [prompt, setPrompt] = useState(mode?.prompt ?? '')
+  const [error, setError] = useState('')
+  const jobs = s.modeFileJobs.filter((j) => j.modeId === mode?.id)
+  const save = async () => {
+    try {
+      if (mode) await glint.invoke('modes:update', { id: mode.id, name: name.trim() || mode.name, prompt })
+      else if (name.trim() || prompt.trim()) {
+        const id = await glint.invoke<string>('modes:add', { name: name.trim() || 'My calls', prompt })
+        await patch({ activeModeId: id })
+      }
+      onDone()
+    } catch (err) {
+      setError((err as Error).message)
+    }
+  }
+  return (
+    <div className="ob-page">
+      <div className="ob-heading">
+        <h1>{mode ? `Make ${mode.name} yours` : 'Make a mode of your own'}</h1>
+        <p>
+          A mode tells Glint what your calls are about and how you like answers. Say what you sell, teach or work on, and add
+          files to answer from: a price sheet, notes, slides. You can have as many as you like and switch on the capsule.
+        </p>
+      </div>
+      <div className="ob-mode">
+        <label>
+          <span>Name</span>
+          <input type="text" value={name} maxLength={60} placeholder="Client calls" onChange={(e) => setName(e.target.value)} />
+        </label>
+        <label>
+          <span>What Glint should know</span>
+          <textarea rows={7} value={prompt}
+            placeholder="I run onboarding calls for new customers of our accounting app. Answers: short, friendly, with the exact menu path when someone asks how to do something."
+            onChange={(e) => setPrompt(e.target.value)} />
+        </label>
+        {mode && (
+          <div className="ob-files">
+            <button className="ob-action" onClick={() => void glint.invoke('modes:add-files', mode.id).catch((err: Error) => setError(err.message))}>Add files</button>
+            <span>
+              {jobs.length ? `Reading ${jobs.map((j) => j.name).join(', ')}…`
+                : mode.files?.length ? mode.files.map((f) => f.name).join(', ')
+                : 'PDFs, Word, slides, text. Kept on this ' + COMPUTER + ', encrypted.'}
+            </span>
+          </div>
+        )}
+        {error && <p className="error">{error}</p>}
+      </div>
+      <p className="ob-hint">Glint comes with eleven ready-made modes too, for interviews, coding, lectures and more, in Settings → Modes.</p>
+      <div className="ob-foot">
+        <button className="ob-back" onClick={onDone}>Skip</button>
+        <span className="grow" />
+        <button className="ob-primary" onClick={() => void save()}>Save and continue</button>
+      </div>
+    </div>
+  )
+}
+
+const EXAMPLES = ['What does this error mean?', 'Write a short, kind reply to this email', 'Explain this chart in two sentences', 'What should I ask in my next one-on-one?']
+
+/** Glint without a call: ask about the screen or anything at all, then the same with smart mode. */
+function AskAnything({ s, onDone }: { s: State; onDone: () => void }) {
+  const k = (a: ShortcutAction) => prettyAccelerator(s.shortcuts[a], isMac)
+  const since = useRef(Date.now())
+  const a = s.lastAnswer && !s.lastAnswer.inSession && s.lastAnswer.at > since.current ? s.lastAnswer : null
+  const [plain, setPlain] = useState(false)
+  const [smart, setSmart] = useState(false)
+  useEffect(() => void (a && (a.smart ? setSmart(true) : setPlain(true))), [a?.at])
+  const tasks = [
+    { done: plain, teach: 'ask' as const, title: `Press ${k('ask')} with something on screen`, sub: 'With no call, Glint answers about your screen. Or type any question in the chat box.' },
+    {
+      done: smart, teach: 'smart' as const, title: 'Turn on smart mode and ask something hard',
+      sub: `The bulb beside the chat box, or ${k('toggleSmart')}. Smart mode thinks before it answers: slower, more careful. Turn it off for quick ones.`,
+    },
+  ]
+  const current = tasks.find((t) => !t.done)
+  useEffect(() => void patch({ overlayVisible: true, chat: { visible: true, view: 'chat' } }), [])
+  useEffect(() => void patch({ teach: current ? (current.teach === 'smart' && s.smart ? 'ask' : current.teach) : null }), [current?.teach, s.smart])
+  return (
+    <div className="ob-page">
+      <div className="ob-heading">
+        <h1>Ask it anything, any time</h1>
+        <p>Glint doesn't need a call. It's on top of every app, ready for a question about what you're looking at, or anything else.</p>
+      </div>
+      <ol className="ob-tasks ob-try">
+        {tasks.map((t) => (
+          <li key={t.title} className={t.done ? 'done' : t === current ? 'current' : ''} aria-current={t === current ? 'step' : undefined}>
+            <span className="mark">{t.done ? <Icon name="checkCircle" size={20} /> : <i />}</span>
+            <span><b>{t.title}</b><small>{t.sub}</small></span>
+          </li>
+        ))}
+      </ol>
+      <div className="ob-examples">
+        <b>Try</b>
+        {EXAMPLES.map((e) => <span key={e}>{e}</span>)}
+      </div>
+      <div className="ob-foot">
+        <button className="ob-back" onClick={onDone}>Skip</button>
+        <span className="grow" />
+        <button className={`ob-primary ${current ? 'waiting' : ''}`} onClick={onDone}>Continue</button>
+      </div>
+    </div>
+  )
+}
+
+/** The ideas to remember, each with its key, the checklist so far, and one question. */
+function Ready({ s, onDone }: { s: State; onDone: () => void }) {
   const k = (a: ShortcutAction) => prettyAccelerator(s.shortcuts[a], isMac)
   const ideas = [
-    { key: k('ask'), text: 'Ask, from any app. Glint answers from the call and your screen.' },
+    { key: k('ask'), text: 'Ask, from any app, in a call or not. Glint answers from what was said and your screen.' },
+    { key: k('toggleSmart'), text: 'Smart mode, the bulb beside the chat box, for hard questions: it thinks it through first. Off again for quick answers.' },
     { key: k('toggleOverlay'), text: 'Hide Glint, and bring it back.' },
-    { key: k('toggleInvisible'), text: 'Invisible mode, from the eye button: Glint stays out of screen shares.' },
     { key: k('toggleSession'), text: 'Start or end notes. Every call ends with notes and a follow-up email.' },
+    { key: k('toggleInvisible'), text: 'Invisible mode, from the eye in Meeting options: Glint stays out of screen shares.' },
   ]
-  const checklist = [
-    { done: true, text: 'Installed' },
-    { done: did.heard, text: 'Heard a call' },
-    { done: did.asked, text: 'Got an answer' },
-    { done: false, text: 'First real call' },
-    { done: false, text: 'Name a speaker' },
-    { done: false, text: 'Try Glance' },
-  ]
+  const done = (id: string) => id === 'setup' || !!s.firsts[id]
   return (
     <div className="ob-page">
       <div className="ob-heading">
         <h1>You're set</h1>
-        <p>Four things to remember. Everything else you can find as you go.</p>
+        <p>
+          The things to remember. Everything else you'll meet one tip at a time, when it's useful.
+          {s.meetingPrompt && ' Glint offers to take notes when your next call starts.'}
+        </p>
       </div>
       <ul className="ob-ideas">{ideas.map((i) => <li key={i.text}>{i.key ? <kbd>{i.key}</kbd> : <i />}<span>{i.text}</span></li>)}</ul>
-      <ol className="ob-tasks ob-check">
-        {checklist.map((c) => (
-          <li key={c.text} className={c.done ? 'done' : ''}>
-            <span className="mark">{c.done ? <Icon name="checkCircle" size={20} /> : <i />}</span><span><b>{c.text}</b></span>
-          </li>
+      {!s.firsts.hidden && (
+        <ol className="ob-tasks ob-check">
+          {CHECKLIST.map((c) => (
+            <li key={c.id} className={done(c.id) ? 'done' : ''}>
+              <span className="mark">{done(c.id) ? <Icon name="checkCircle" size={20} /> : <i />}</span><span><b>{c.label}</b></span>
+            </li>
+          ))}
+        </ol>
+      )}
+      <div className="ob-ease" role="group" aria-label="How easy was setup?">
+        <span>How easy was setup?</span>
+        <small>Very hard</small>
+        {[1, 2, 3, 4, 5, 6, 7].map((n) => (
+          <button key={n} className={s.setupEase === n ? 'on' : ''} aria-pressed={s.setupEase === n} onClick={() => void patch({ setupEase: n })}>{n}</button>
         ))}
-      </ol>
+        <small>Very easy</small>
+      </div>
       <div className="ob-foot">
-        <span className="ob-hint">{s.meetingPrompt ? 'Glint will offer to take notes when your next call starts.' : `Press ${k('toggleSession')} when your next call starts.`}</span>
+        {!s.firsts.hidden && <button className="ob-link" onClick={() => glint.send('checklist:hide')}>Hide tips and checklist</button>}
         <span className="grow" />
         <button className="ob-primary" onClick={onDone}>Done</button>
       </div>

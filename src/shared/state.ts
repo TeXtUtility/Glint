@@ -1,4 +1,5 @@
 // Imports only shared files that import nothing themselves: main, renderer and tests all use this file.
+import type { TipId } from './tips.ts'
 import { HUMANIZERS, type HumanizerAccount, type HumanizerCustom, type HumanizerService } from './humanize.ts'
 
 export type Perm = 'unknown' | 'granted' | 'denied'
@@ -42,6 +43,7 @@ export const DEFAULT_SHORTCUTS = {
   togglePause: '',
   toggleInvisible: '',
   ask: 'CommandOrControl+Enter',
+  toggleSmart: 'CommandOrControl+Alt+Enter',
   openSettings: 'CommandOrControl+,',
   moveUp: 'CommandOrControl+Up',
   moveDown: 'CommandOrControl+Down',
@@ -213,6 +215,13 @@ export const CAPSULE_ITEMS = [
 ] as const
 export type CapsuleItem = (typeof CAPSULE_ITEMS)[number]
 const STARTER_CAPSULE: CapsuleItem[] = ['activity', 'divider-1', 'mode', 'divider-3', 'session', 'divider-4', 'chat', 'ask']
+/** `shown` with `id` added where the default order has it: before the first shown item that comes after it. */
+export function placeOnCapsule(shown: CapsuleItem[], id: CapsuleItem): CapsuleItem[] {
+  if (shown.includes(id)) return shown
+  const after = CAPSULE_ITEMS.slice(CAPSULE_ITEMS.indexOf(id) + 1)
+  const at = shown.findIndex((x) => after.includes(x))
+  return at < 0 ? [...shown, id] : [...shown.slice(0, at), id, ...shown.slice(at)]
+}
 export const isDivider = (id: CapsuleItem) => id.startsWith('divider')
 /** Drops the dividers a layout leaves at the end or next to another divider. A leading one stays: it follows the status. */
 export const tidyDividers = (ids: CapsuleItem[]) => ids.filter((id, i) => !isDivider(id) || (i < ids.length - 1 && !isDivider(ids[i + 1])))
@@ -301,6 +310,15 @@ export interface Persisted {
   useCase: PracticeId | 'other' | null
   /** Setup was finished without every permission. Glint runs anyway, and setup isn't brought back for them. */
   skippedPermissions: boolean
+  /**
+   * When each milestone first happened (FIRSTS in tips.ts), and when each tip was shown ('tip:ask'). Set only on
+   * installs that went through the new setup ('setup'), which is what turns the checklist and tips on.
+   */
+  firsts: Record<string, number>
+  /** Real calls recorded so far (not the practice call or resumes), for the tips that wait for the second or third. */
+  calls: number
+  /** The answer to setup's last question, "How easy was that?", 1 (very hard) to 7 (very easy). */
+  setupEase: number | null
   /** Ghost jumps ahead by itself when the user skips, swaps or adds words, or clicks into the next field. Off: only ⌃⌥⌘← → skip. */
   ghostAutoSkip: boolean
   /** macOS: the "move to Applications?" offer is made once. */
@@ -375,7 +393,7 @@ export interface State extends Persisted {
   /** Onboarding's Try it step is showing: the overlays run as in the app, with onboarding still open. */
   practicing: boolean
   /** The capsule control Try it is teaching, which gets a halo. */
-  teach: 'start' | 'ask' | 'invisible' | 'stop' | null
+  teach: 'start' | 'ask' | 'invisible' | 'stop' | 'smart' | null
   /** A session's notes just finished: the panel offers to open them in the Follow-up window. */
   notesReady: { id: string; title: string } | null
   /** The AI's last failure, kept until the chosen provider answers again or the user dismisses it. Turns the UI red. */
@@ -407,6 +425,10 @@ export interface State extends Persisted {
   people: { id: string; name: string; lastHeard: number; hasSample: boolean; sessions: number }[]
   /** A voice from this session heard enough to be worth naming; null when none is waiting. */
   namePrompt: { id: string; label: string; seconds: number } | null
+  /** The tip under the capsule (TIPS in tips.ts), or null. */
+  tip: TipId | null
+  /** The last ask that got an answer: when, with smart mode, and whether in a session. Failed asks don't count. */
+  lastAnswer: { at: number; smart: boolean; inSession: boolean } | null
 }
 
 export const PERSISTED_DEFAULTS: Persisted = {
@@ -456,6 +478,9 @@ export const PERSISTED_DEFAULTS: Persisted = {
   afterCall: { notesPrompt: '', emailPrompt: '', autoDraft: true },
   useCase: null,
   skippedPermissions: false,
+  firsts: {},
+  calls: 0,
+  setupEase: null,
   movePromptShown: false,
   // New installs start small: what the first calls use is on the capsule, the rest waits in Meeting options (the
   // dashed edge still shows invisible mode). Saved layouts are kept.
@@ -501,6 +526,8 @@ export const RUNTIME_DEFAULTS: Omit<State, keyof Persisted> = {
   modeFileJobs: [],
   people: [],
   namePrompt: null,
+  tip: null,
+  lastAnswer: null,
 }
 
 /** Compares dotted versions numerically, so 0.10.0 is newer than 0.9.0. */
@@ -616,6 +643,9 @@ const VALID: { [K in keyof Persisted]: (v: Persisted[K]) => boolean } = {
     typeof a.emailPrompt === 'string' && a.emailPrompt.length <= AFTER_CALL_PROMPT_MAX && typeof a.autoDraft === 'boolean',
   useCase: (v) => v === null || v === 'other' || PRACTICE_IDS.includes(v),
   skippedPermissions: bool,
+  firsts: (f) => isObj(f) && Object.keys(f).length <= 64 && Object.values(f).every((t) => Number.isFinite(t)),
+  calls: (n) => Number.isInteger(n) && n >= 0,
+  setupEase: (n) => n === null || (Number.isInteger(n) && n >= 1 && n <= 7),
   movePromptShown: bool,
   capsule: (c) => {
     if (!isObj(c) || !Array.isArray(c.shown) || !Array.isArray(c.hidden)) return false
@@ -644,11 +674,11 @@ export function loadPersisted(json: string): { value: Persisted; rejected: strin
   for (const k of Object.keys(sc)) if (typeof sc[k] === 'string') sc[k] = sc[k].replace(/^Control\+Alt\+Command\+/, 'CommandOrControl+Control+Alt+')
   const rejected = (Object.keys(VALID) as (keyof Persisted)[]).filter((k) => !(VALID[k] as (v: unknown) => boolean)(out[k]))
   for (const k of rejected) out[k] = d[k]
-  // A control added since the file was written goes where a new install has it, at the end, rather than in neither list.
+  // A control added since the file was written goes where a new install has it, rather than in neither list.
   const cap = out.capsule as Persisted['capsule']
   const missing = CAPSULE_ITEMS.filter((id) => !cap.shown.includes(id) && !cap.hidden.includes(id))
   const hide = (id: CapsuleItem) => d.capsule.hidden.includes(id)
-  if (missing.length) out.capsule = { shown: [...cap.shown, ...missing.filter((id) => !hide(id))], hidden: [...cap.hidden, ...missing.filter(hide)] }
+  if (missing.length) out.capsule = { shown: missing.filter((id) => !hide(id)).reduce(placeOnCapsule, cap.shown), hidden: [...cap.hidden, ...missing.filter(hide)] }
   return { value: out as unknown as Persisted, rejected }
 }
 

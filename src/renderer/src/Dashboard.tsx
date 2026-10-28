@@ -3,6 +3,7 @@ import {
   isChatId, lineLabel, ownerName, renamed, sessionPeople, titleOf, transcriptText, type ActionItem, type SavedSession, type SessionSummary,
 } from '../../shared/history'
 import { elapsedMs, formatElapsed, type State } from '../../shared/state'
+import { CHECKLIST, checklistLeft } from '../../shared/tips'
 import { glint, isMac, useTick } from './glint'
 import { Icon } from './icons'
 import { Markdown } from './Markdown'
@@ -94,6 +95,7 @@ export function Dashboard({ s, openId, setOpenId, onContinue }: {
           value={query} onMouseDown={wantFocus} onChange={(e) => setQuery(e.target.value)} />
       </label>
       {error && <p className="error">{error}</p>}
+      {!query.trim() && <GettingStarted s={s} />}
       {unreadable > 0 && (
         <p className="muted">
           {unreadable === 1 ? '1 saved session' : `${unreadable} saved sessions`} can't be opened: damaged, or encrypted with a
@@ -118,7 +120,9 @@ export function Dashboard({ s, openId, setOpenId, onContinue }: {
                     <span className="session-title">{titleOf(r)}</span>
                     <span className="session-meta">
                       {time(r.startedAt)} · {isChatId(r.id) ? 'Chat' : s.session?.id === r.id ? `${formatElapsed(elapsedMs(s, Date.now()))} so far` : minutes(r.elapsedMs)}
-                      {!!r.tags?.length && <span className="tags">{r.tags.map((t) => <span key={t}>{t}</span>)}</span>}
+                      {(r.mode === 'Practice call' || !!r.tags?.length) && (
+                        <span className="tags">{r.mode === 'Practice call' && <span>Practice</span>}{r.tags?.map((t) => <span key={t}>{t}</span>)}</span>
+                      )}
                     </span>
                   </span>
                   {status && <span className={`status ${status.kind}`}>{status.label}</span>}
@@ -535,4 +539,25 @@ export function notesLine(r: SavedSession, live: boolean) {
   if (r.notesStatus === 'processing') return 'Writing notes…'
   if (r.notesStatus === 'failed') return `Couldn't write notes: ${r.notesError ?? 'unknown error'}.`
   return 'No notes yet.'
+}
+
+/** Setup's checklist, until it's done: what's been tried, and what's next. */
+function GettingStarted({ s }: { s: State }) {
+  const left = checklistLeft(s.firsts)
+  if (!left.length) return null
+  return (
+    <section className="getting-started" aria-label="Getting started">
+      <h3 className="day">
+        Getting started · {CHECKLIST.length - left.length} of {CHECKLIST.length}
+        <button className="link" data-tip="Hides this list and turns tips off. Settings → General brings them back" onClick={() => glint.send('checklist:hide')}>Hide</button>
+      </h3>
+      <ul>
+        {CHECKLIST.map((c) => (
+          <li key={c.id} className={left.includes(c) ? '' : 'done'}>
+            {left.includes(c) ? <i /> : <Icon name="checkCircle" size={14} />}{c.label}
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
 }

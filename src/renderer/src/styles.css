@@ -208,7 +208,7 @@ html.glass .panel.surface.faded { background-color: rgb(var(--glass-rgb) / calc(
 .circle.stop { color: #ff8080; }
 .circle.stop::after { content: ''; position: absolute; inset: 7px; border-radius: 50%; border: 1.5px solid currentColor; }
 .circle.tune.open { background: rgba(255, 255, 255, 0.1) !important; color: var(--text); }
-.island .teach { box-shadow: 0 0 0 3px rgba(123, 143, 255, 0.35) !important; }
+.island .teach, .bulb.teach { box-shadow: 0 0 0 3px rgba(123, 143, 255, 0.35) !important; }
 .circle.small { width: 28px; height: 28px; background: var(--chip) !important; color: var(--text); }
 
 .pill { height: 32px; border-radius: 16px !important; padding: 0 12px !important; display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; flex: none; color: var(--text); }
@@ -226,6 +226,9 @@ html.glass .panel.surface.faded { background-color: rgb(var(--glass-rgb) / calc(
 .tray.surface:not(.failing) { background: rgb(28 29 36 / calc(var(--glass-alpha, 0.9) + 0.04)); }
 .tray-q { margin-right: 2px; color: rgba(236, 236, 241, 0.6); }
 .tray-q b { color: #ececf1; }
+.tip-tray { height: auto; min-height: 40px; max-width: 460px; padding: 6px 6px 6px 14px; white-space: normal; line-height: 1.4; }
+.tip-tray > svg { flex: none; color: #9aa9ff; }
+.tip-tray .chip { flex: none; }
 .tray .circle.small { background: rgba(255, 255, 255, 0.08) !important; }
 .circle.small.playing, .tray .circle.small.playing { background: rgba(123, 143, 255, 0.2) !important; color: #9aa9ff; }
 .tray input { width: 120px; height: 28px; border-radius: 14px; border: none; background: var(--chip); padding: 0 10px; outline: none; user-select: text; font-size: 12px; }
@@ -582,6 +585,14 @@ html.glass .ghost :is(.glance-strip, .glance-card):not(.failing) { background-co
 .dash { display: flex; flex-direction: column; gap: 2px; padding-top: 8px; }
 .dash-search { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; margin: 6px -4px 4px; border-radius: 9px; background: rgba(255, 255, 255, 0.05); color: var(--faint); }
 .dash-search input { flex: 1; border: none; background: transparent; outline: none; font-size: 13px; user-select: text; color: var(--text); }
+.getting-started h3 { display: flex; align-items: center; }
+.getting-started h3 .link { margin: 0 10px 0 auto; font-size: 11px; text-transform: none; letter-spacing: 0; color: var(--muted); }
+.getting-started h3 .link:hover { color: var(--text); }
+.getting-started ul { list-style: none; margin: 4px 0 10px; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 12px; font-size: 12.5px; color: var(--text-2); }
+.getting-started li { display: flex; align-items: center; gap: 8px; }
+.getting-started li i { width: 12px; height: 12px; margin: 0 1px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--faint); flex: none; }
+.getting-started li.done { color: var(--faint); }
+.getting-started li.done svg { color: #7ee3a9; flex: none; }
 
 .day { font-size: 10.5px; font-weight: 400; text-transform: uppercase; letter-spacing: 0.03em; color: var(--faint); margin: 14px 0 4px 10px; }
 .session-row { display: flex !important; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 9px 10px !important; border-radius: 10px !important; }
@@ -716,7 +727,7 @@ html[data-route="onboarding"] body { font-size: 13px; }
 .ob-rail li.done .marker { box-shadow: none; background: rgba(123, 143, 255, 0.2); color: var(--accent-text); }
 .ob-rail li.current .marker { box-shadow: none; background: #7b8fff; color: #10121c; font-weight: 700; }
 .ob-rail li.current .label { color: var(--text); font-weight: 600; }
-.ob-rail-foot { margin: auto 0 0; font-size: 11px; line-height: 1.55; color: var(--faint); }
+.ob-rail-foot { display: flex; flex-direction: column; gap: 6px; margin: auto 0 0; font-size: 11px; line-height: 1.55; color: var(--faint); }
 .ob-main { min-width: 0; overflow-y: auto; animation: ob-in 0.18s var(--spring); }
 @keyframes ob-in { from { opacity: 0; translate: var(--from, 24px) 0; } }
 @media (prefers-reduced-motion: reduce) { .ob-main { animation: fade-in 0.12s; } }
@@ -1263,3 +1274,19 @@ html.glass :is(.surface:not(.failing), .popover.options) { background-color: rgb
 .ob-check { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); max-width: 620px; }
 .ob-check li.done b { text-decoration: none; }
 @media (max-width: 900px) { .ob-uses, .ob-check { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.ob-mode { display: flex; flex-direction: column; gap: 14px; max-width: 620px; }
+.ob-mode label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--muted); }
+.ob-mode input, .ob-mode textarea { padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--text); font: inherit; font-size: 13px; line-height: 1.5; outline: none; resize: vertical; }
+.ob-mode input:focus, .ob-mode textarea:focus { border-color: rgba(123, 143, 255, 0.6); }
+.ob-mode .error { margin: 0; font-size: 12px; color: var(--danger-text); }
+.ob-files { display: flex; align-items: center; gap: 12px; font-size: 12px; color: var(--muted); }
+.ob-files .ob-action { flex: none; }
+.ob-try { max-width: 620px; }
+.ob-examples { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; max-width: 620px; font-size: 12px; color: var(--muted); }
+.ob-examples b { font-weight: 600; color: var(--faint); margin-right: 2px; }
+.ob-examples span { padding: 5px 10px; border-radius: 12px; background: var(--card); border: 1px solid var(--line); color: var(--text-2); }
+.ob-ease { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); }
+.ob-ease > span { flex-basis: 100%; margin-bottom: 2px; color: var(--text-2); }
+.ob-ease small { font-size: 11px; color: var(--faint); }
+.ob-ease button { width: 28px; height: 28px; border-radius: 14px; background: var(--card) !important; box-shadow: inset 0 0 0 1px var(--line); font-size: 12px; }
+.ob-ease button.on { background: #7b8fff !important; color: #10121c !important; box-shadow: none; font-weight: 600; }

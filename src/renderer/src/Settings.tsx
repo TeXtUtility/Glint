@@ -2,6 +2,7 @@ import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode 
 import { HUMANIZER_LABELS, HUMANIZER_OPTIONS, HUMANIZERS, type HumanizerCustom, type HumanizerService } from '../../shared/humanize'
 import { FOLLOW_UP_INSTRUCTIONS, MODE_TEMPLATES, NOTES_INSTRUCTIONS } from '../../shared/prompt'
 import { chooseFirst, PROVIDER_LABELS } from '../../shared/providers'
+import { TIPS, type TipId } from '../../shared/tips'
 import {
   AFTER_CALL_PROMPT_MAX,
   AI_PROVIDERS, clashesWithEditing, CORNERS, DEFAULT_SHORTCUTS, GLANCE_COOLDOWN_RANGE, isDivider, isNewer, isSystemShortcut, NOTE_MAX, PERSISTED_DEFAULTS, prettyAccelerator, TERMINAL_APPS, toAccelerator, LOCAL_WHISPER_MODELS,
@@ -29,6 +30,7 @@ const LABELS: Record<ShortcutAction, string> = {
   togglePause: 'Pause session',
   toggleInvisible: 'Invisible mode',
   ask: 'Ask',
+  toggleSmart: 'Smart mode',
   openSettings: 'Settings',
   moveUp: 'Move overlay up',
   moveDown: 'Move overlay down',
@@ -244,6 +246,8 @@ function General({ s, onReleaseNotes }: { s: State; onReleaseNotes: () => void }
         <Updates s={s} />
       </Section>
 
+      <ShowMeHow s={s} />
+
       <div className="footer-actions">
         <button data-tip="Go through permissions and the practice steps again" onClick={() => patch({ onboardingDone: false })}>Redo onboarding</button>
         <button data-tip="Quit and reopen Glint" onClick={() => glint.send('app:relaunch')}>Restart Glint</button>
@@ -252,6 +256,20 @@ function General({ s, onReleaseNotes }: { s: State; onReleaseNotes: () => void }
         <ConfirmButton label="Hold to reset all settings" confirmLabel="Reset and restart" onConfirm={() => glint.send('app:reset')} />
       </div>
     </>
+  )
+}
+
+/** Every tip, for anyone who wants them now, and the switch for tips and the getting-started list. */
+function ShowMeHow({ s }: { s: State }) {
+  const k = (a: ShortcutAction) => prettyAccelerator(s.shortcuts[a], isMac) || 'no shortcut'
+  return (
+    <Section title="Show me how">
+      {s.firsts.setup && (
+        <Toggle label="Tips and the getting-started list" hint="One tip at a time, when it's useful, and the checklist in History and the menu bar"
+          checked={!s.firsts.hidden} onChange={(v) => glint.send('checklist:hide', !v)} />
+      )}
+      {(Object.keys(TIPS) as TipId[]).map((id) => <Row key={id} label={TIPS[id].when} hint={TIPS[id].text(k)} />)}
+    </Section>
   )
 }
 
@@ -1470,7 +1488,7 @@ function Shortcuts({ s }: { s: State }) {
     </Row>
   )
   const groups: [string, ShortcutAction[]][] = [
-    ['During a call', ['toggleOverlay', 'toggleSession', 'togglePause', 'toggleInvisible', 'ask', 'openSettings']],
+    ['During a call', ['toggleOverlay', 'toggleSession', 'togglePause', 'toggleInvisible', 'ask', 'toggleSmart', 'openSettings']],
     ['Overlay', ['toggleDiscreet', 'toggleGlance', 'toggleGhost', 'moveUp', 'moveDown', 'moveLeft', 'moveRight', 'scrollUp', 'scrollDown']],
     ['Ghost', ['ghostAsk', 'ghostPrompt', 'ghostPrev', 'ghostNext', 'ghostBack', 'ghostSkip', 'ghostHide', 'ghostFadeIn', 'ghostFadeOut', 'ghostBigger', 'ghostSmaller', 'ghostCorner']],
   ]

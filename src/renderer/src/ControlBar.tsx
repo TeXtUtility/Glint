@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { HUMANIZER_LABELS } from '../../shared/humanize'
 import { chooseFirst, PROVIDER_LABELS, splitFailure } from '../../shared/providers'
+import { TIPS, type TipId } from '../../shared/tips'
 import {
   AI_PROVIDERS, CAPSULE_ITEMS, elapsedMs, formatElapsed, isDivider, NOTE_MAX, OPACITY_RANGES, prettyAccelerator, tidyDividers, type AiProvider,
   type AutoCopy, type CapsuleItem, type State,
@@ -90,6 +91,7 @@ export function ControlBar() {
 
       {s.namePrompt && !failure && <NameTray key={s.namePrompt.id} s={s} prompt={s.namePrompt} />}
       {s.callDetected && !s.session && <CallTray s={s} app={s.callDetected} />}
+      {s.tip && !s.namePrompt && !(s.callDetected && !s.session) && <TipTray key={s.tip} s={s} tip={s.tip} />}
       <Presence open={open === 'options'}>{(closing) => <MeetingOptions c={c} hidden={hidden} more={moved} closing={closing} onClose={() => setOpen(null)} />}</Presence>
     </div>
   )
@@ -188,7 +190,7 @@ const usable = (s: State, id: CapsuleItem) => id !== 'humanize' || s.humanizer.s
 /** Items a failure hides, wherever they sit. */
 const CALM = new Set<CapsuleItem>(['activity', 'mode', 'screen', 'invisible', 'room', 'labels'])
 /** The control Try it teaches shows on the capsule even when the user hid it. */
-const TAUGHT: Record<NonNullable<State['teach']>, CapsuleItem> = { start: 'session', stop: 'session', ask: 'ask', invisible: 'invisible' }
+const TAUGHT: Record<NonNullable<State['teach']>, CapsuleItem> = { start: 'session', stop: 'session', ask: 'ask', invisible: 'invisible', smart: 'chat' } // smart: the bulb beside the chat box
 
 function layout(s: State) {
   const taught = s.teach && TAUGHT[s.teach]
@@ -447,6 +449,20 @@ function CallTray({ s, app }: { s: State; app: string }) {
       <button className="chip accent" onClick={() => glint.send('session:start')}>Take notes</button>
       <button className="chip plain" onClick={() => glint.send('call:dismiss')}>Not now</button>
       <button className="chip plain" data-tip="Stop offering. Turn it back on in Settings → General" onClick={() => patch({ meetingPrompt: false })}>Turn off</button>
+    </div>
+  )
+}
+
+/** A tip (tips.ts): one sentence, what it's about made one click away, and Got it. */
+function TipTray({ s, tip }: { s: State; tip: TipId }) {
+  const t = TIPS[tip]
+  return (
+    <div className={`tray surface tip-tray ${s.isInvisible ? '' : 'on-share'} ${s.discreet ? 'faded' : ''}`} role="status">
+      <DashedEdge />
+      <Icon name="bulb" size={14} />
+      <span className="tray-q">{t.text((a) => prettyAccelerator(s.shortcuts[a], isMac))}</span>
+      {t.action && <button className="chip accent" onClick={() => glint.send('tip:act')}>{t.action}</button>}
+      <button className="chip plain" onClick={() => patch({ tip: null })}>Got it</button>
     </div>
   )
 }

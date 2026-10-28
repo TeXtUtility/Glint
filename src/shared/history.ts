@@ -144,7 +144,7 @@ export const notesOf = (r: SavedSession): SessionNotes => ({
   actions: r.actions, followUp: r.followUp, notesLabels: r.notesLabels,
 })
 
-export type SessionSummary = Pick<SavedSession, 'id' | 'startedAt' | 'endedAt' | 'elapsedMs'> & SessionNotes
+export type SessionSummary = Pick<SavedSession, 'id' | 'startedAt' | 'endedAt' | 'elapsedMs' | 'mode'> & SessionNotes
 
 /**
  * Who said a line: "Me", a saved person, "Speaker 2", or "Them". A room-mode line that might not be the user gets

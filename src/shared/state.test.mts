@@ -67,7 +67,7 @@ test('capsule layout: new controls show, bad lists fall back, dividers tidy', ()
   // Controls missing from the file go where a new install has them.
   const starts = PERSISTED_DEFAULTS.capsule.hidden
   assert.deepEqual(load({ shown: ['ask'], hidden: ['mode'] }), {
-    shown: ['ask', ...CAPSULE_ITEMS.filter((id) => id !== 'ask' && id !== 'mode' && !starts.includes(id))],
+    shown: CAPSULE_ITEMS.filter((id) => id !== 'mode' && !starts.includes(id)), // 'ask' was there; the rest go in around it
     hidden: ['mode', ...CAPSULE_ITEMS.filter((id) => id !== 'mode' && starts.includes(id))],
   })
   assert.deepEqual(load({ shown: ['ask', 'ask'], hidden: [] }), PERSISTED_DEFAULTS.capsule)

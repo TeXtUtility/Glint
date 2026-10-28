@@ -164,7 +164,7 @@ function summaryOf(f: string): SessionSummary | null {
   if (hit && hit.mtimeMs === mtimeMs) return hit.summary
   const r = tryLoad(id)
   // "processing" left on disk by a quit mid-generation: show it as failed so it can be retried.
-  const summary = r && { id: r.id, startedAt: r.startedAt, endedAt: r.endedAt, elapsedMs: r.elapsedMs, ...notesOf(r) }
+  const summary = r && { id: r.id, startedAt: r.startedAt, endedAt: r.endedAt, elapsedMs: r.elapsedMs, mode: r.mode, ...notesOf(r) }
   summaries.set(id, { mtimeMs, summary })
   return summary
 }

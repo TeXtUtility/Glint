@@ -8,13 +8,14 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { format } from 'node:util'
-import { askEffort, elapsedMs, formatElapsed, GHOST_FONT_RANGE, GHOST_OPACITY_RANGE, isLanguageCode, NOTE_MAX, phase, PRACTICE_IDS, searchesFiles, type AskPayload, type KeyProvider, type Mode, type PracticeId, type Session, type ShortcutAction, type State, type TranscriptItem } from '../shared/state'
+import { askEffort, elapsedMs, formatElapsed, GHOST_FONT_RANGE, GHOST_OPACITY_RANGE, isLanguageCode, NOTE_MAX, phase, placeOnCapsule, PRACTICE_IDS, searchesFiles, type AskPayload, type KeyProvider, type Mode, type PracticeId, type Session, type ShortcutAction, type State, type TranscriptItem } from '../shared/state'
 import { NAME_GUESS_SYSTEM_PROMPT, nameGuessContext, nameGuessQuestion, parseNameGuess, PRACTICE_CALLS, systemPrompt, WEB_SEARCH_PROMPT } from '../shared/prompt'
 import { transcriptText } from '../shared/history'
 import { HUMANIZER_LABELS, HUMANIZERS, humanizes, type HumanizerConfig, type HumanizerService } from '../shared/humanize'
 import { scrub } from '../shared/markdown'
 import { askWithFallbacks, cliStatus, complete, coolClaudeCli, keyStatus, readyProviders, removeLeftoverTemp, setKey, statusOf, warmCache, warmClaudeCli } from './ai'
 import { readyFirst } from '../shared/providers'
+import { checklistLeft, CHECKLIST, tipAtStart, TIPS, type First, type TipId } from '../shared/tips'
 import { addModeFiles, passagesFor, prepareSearch, referenceFor, removeModeFile, sweepModeFiles } from './files'
 import { bugReport, initLog, logTail, setVerbose, verbose } from './log'
 import { modelUsage, removeUnusedModels, sweepModels } from './models'
@@ -199,6 +200,14 @@ function boot() {
   })
   // Setup has its own AI step: the alarm waits until setup is done, then says so if it was skipped.
   subscribe((s, prev) => s.onboardingDone && !prev.onboardingDone && void readyProviders().then((ready) => !ready.size && noAi()))
+  subscribe((s, prev) => {
+    if (s.onboardingDone && !prev.onboardingDone) first('setup')
+    if (s.layout === 'glance' && prev.layout !== 'glance') first('glance')
+    // A tip goes away once you do what it says.
+    if ((s.tip === 'glance' && s.layout === 'glance') || (s.tip === 'smart' && s.smart)) patchState({ tip: null })
+  })
+  const { firsts } = getState()
+  if (firsts.setup && Date.now() - firsts.setup > 7 * 86_400_000) showTip('more')
   if (pendingLink) handleLink(pendingLink)
   pendingLink = null
 }
@@ -267,6 +276,9 @@ function reportHeader(): string {
     smart: s.smart, transcription: s.transcription, speakerLabels: s.speakerLabels, roomMode: s.roomMode, voiceprint: s.voiceprint,
     invisible: s.isInvisible, discreet: s.discreet, compactBar: s.compactBar, screenContext: s.screenContext, permissions: s.permissions,
     modes: s.modes.length, activeModeFiles: s.modes.find((m) => m.id === s.activeModeId)?.files?.length ?? 0, vad: s.vad, voice: s.voice,
+    // Setup and getting started: minutes from the end of setup to each first, never what was said.
+    setup: { useCase: s.useCase, ease: s.setupEase, calls: s.calls, skippedPermissions: s.skippedPermissions,
+      firsts: Object.fromEntries(Object.entries(s.firsts).map(([k, t]) => [k, s.firsts.setup ? Math.round((t - s.firsts.setup) / 60_000) : 0])) },
   }
   return [`Glint ${s.appVersion} (${__GLINT_COMMIT__ || 'local build'})`, s.systemInfo, `Report made ${new Date().toISOString()}`, '', JSON.stringify(settings, null, 2)].join('\n')
 }
@@ -327,7 +339,7 @@ const RENDERER_PATCHABLE = new Set([
   'chat', 'overlayVisible', 'isInvisible', 'lockFocusWhenInvisible', 'discreet', 'opacity', 'screenContext', 'screenshotNote', 'theme', 'openAtLogin', 'onboardingDone',
   'ai', 'transcription', 'activeModeId', 'vad', 'shortcuts', 'isRecordingShortcut', 'audioError', 'inactivityPrompt',
   'voice', 'roomMode', 'speakerLabels', 'autoCopy', 'layout', 'glance', 'aiFailure', 'smart', 'practicing', 'teach', 'updateChannel',
-  'terminalApp', 'runNewWindow', 'compactBar', 'openAtLoginInitialized', 'devTools', 'humanizer', 'capsule', 'ghostAutoSkip', 'meetingPrompt', 'saveChats', 'afterCall', 'useCase', 'skippedPermissions',
+  'terminalApp', 'runNewWindow', 'compactBar', 'openAtLoginInitialized', 'devTools', 'humanizer', 'capsule', 'ghostAutoSkip', 'meetingPrompt', 'saveChats', 'afterCall', 'useCase', 'skippedPermissions', 'tip', 'setupEase',
 ])
 
 function trusted(e: IpcMainEvent | IpcMainInvokeEvent) {
@@ -370,10 +382,12 @@ function registerIpc() {
   // Modes change through these, not whole-array patches, so two quick edits can't overwrite each other.
   handle('modes:add', (_e, m: Partial<Mode>) => {
     const id = randomUUID()
+    if (!m?.templateId) first('mode') // a template added as it comes isn't made yours yet
     patchState({ modes: [...getState().modes, { id, name: String(m?.name ?? ''), prompt: String(m?.prompt ?? ''), ...(typeof m?.templateId === 'string' ? { templateId: m.templateId } : {}) }] })
     return id
   })
   handle('modes:update', (_e, m: Pick<Mode, 'id' | 'name' | 'prompt' | 'screenshotNote'>) => {
+    first('mode')
     const { modes } = getState() // a mode deleted meanwhile stays deleted
     const note = typeof m?.screenshotNote === 'string' ? { screenshotNote: m.screenshotNote.slice(0, NOTE_MAX) } : {}
     patchState({ modes: modes.map((x) => (x.id === m?.id ? { ...x, name: String(m.name), prompt: String(m.prompt), ...note } : x)) })
@@ -528,7 +542,11 @@ function registerIpc() {
   handle('sessions:follow-up', (e, id: string) =>
     draftFollowUp(String(id), (d) => !e.sender.isDestroyed() && e.sender.send('sessions:follow-up-partial', { id: String(id), ...d })))
   on('keys:request', () => platform.keys.request())
-  handle('sessions:rename-speaker', (_e, id: string, speakerId: string, name: string) => renameSpeaker(String(id), String(speakerId), name))
+  handle('sessions:rename-speaker', (_e, id: string, speakerId: string, name: string) => (first('speaker'), renameSpeaker(String(id), String(speakerId), name)))
+  on('tip:act', () => tipAct())
+  // Hides the getting-started list and turns tips off; false brings them back. (0, since a patch can't delete a key.)
+  on('checklist:hide', (_e, hide: unknown) => patchState({ firsts: { hidden: hide === false ? 0 : Date.now() }, ...(hide === false ? {} : { tip: null }) }))
+  on('setup:step', (_e, step: unknown) => typeof step === 'string' && /^[a-z]{1,20}$/.test(step) && console.log(`[setup] ${step}`))
   on('audio:mic', (_e, chunk: unknown) => {
     if (chunk instanceof Uint8Array || chunk instanceof ArrayBuffer) pushMic(new Uint8Array(chunk as ArrayBuffer))
   })
@@ -572,6 +590,7 @@ function registerIpc() {
           send('ai:delta', { id: p.id, text: w })
           await new Promise((r) => setTimeout(r, 25))
         }
+        answered(false)
         return { provider: ai.provider, failures: [] }
       }
       // The practice call's sheet sits in setup's window, which captures leave out, so it's sent as text instead.
@@ -595,6 +614,7 @@ function registerIpc() {
       }, ctrl.signal, (failures, next) => send('ai:switch', { id: p.id, failures, next }))
       answeredBy = r.provider
       if (r.usage) tokens = ` tokens in=${r.usage.input} cache-read=${r.usage.cacheRead} cache-write=${r.usage.cacheWrite} out=${r.usage.output}`
+      if (!ctrl.signal.aborted && reply.trim()) answered(p.effort === 'smart')
       if (ctrl.signal.aborted) outcome = 'cancelled'
       else if (r.failures.length) outcome = `ok after ${r.failures.map((f) => `${f.provider} failed (${f.error})`).join(', ')}`
       // Replied, finished; now the humanizer, if this answer is one it rewrites (see humanizes).
@@ -645,6 +665,7 @@ function registerIpc() {
   handle('voice:name', (_e, id: string, name: string) => {
     const r = nameVoice(String(id), name)
     if (getState().session?.id !== r.sessionId) relabelSpeaker(r.sessionId, r.voiceId, r.personId, r.name)
+    first('speaker')
   })
   handle('voice:skip', (_e, id: string) => skipVoice(String(id)))
   // "Guess": ask the model which name the transcript gives this speaker. The user still confirms it.
@@ -707,6 +728,7 @@ function runShortcut(action: ShortcutAction) {
     togglePause,
     toggleInvisible: () => patchState({ isInvisible: !getState().isInvisible }),
     ask: () => sendToChat('chat:submit'),
+    toggleSmart: () => patchState({ smart: !getState().smart }),
     openSettings,
     moveUp: () => moveBy(0, -step),
     moveDown: () => moveBy(0, step),
@@ -765,8 +787,11 @@ function startSession() {
   if (!canBegin()) return
   const s = getState()
   const language = s.transcription.language || 'en'
-  const mode = s.modes.find((m) => m.id === s.activeModeId)?.name || undefined
-  beginSession({ id: randomUUID(), chatId: randomUUID(), language, transcript: [], startedAt: Date.now(), isResumed: false, priorElapsedMs: 0, mode }, false)
+  const active = s.modes.find((m) => m.id === s.activeModeId)
+  const tip = tipAtStart({ calls: s.calls, firsts: s.firsts, modeHasFiles: !!active?.files?.length, callApp: !!s.callDetected }) // before beginSession clears callDetected
+  beginSession({ id: randomUUID(), chatId: randomUUID(), language, transcript: [], startedAt: Date.now(), isResumed: false, priorElapsedMs: 0, mode: active?.name || undefined }, false)
+  patchState({ calls: s.calls + 1 })
+  if (tip) showTip(tip)
 }
 
 function resume(id = getState().lastSessionId) {
@@ -783,7 +808,8 @@ let stopping = false
 
 /** Waits (bounded) for the last words to be transcribed, so ending a session doesn't drop its tail. */
 async function stopSession() {
-  if (!getState().session || stopping) return
+  const ended = getState().session
+  if (!ended || stopping) return
   stopping = true
   try {
     await finishAudio() // stops capture, then waits for the last lines' text
@@ -792,6 +818,47 @@ async function stopSession() {
     stopping = false
     patchState({ session: null, chat: { expanded: true, view: 'dashboard' } })
   }
+  if (ended.practice) first('practice')
+  else if (ended.transcript.length) (first('call'), showTip('speakers'))
+}
+
+// Getting started (tips.ts): milestones as they first happen, and at most one tip a session.
+
+function first(id: First | `tip:${TipId}`) {
+  if (!getState().firsts[id]) patchState({ firsts: { [id]: Date.now() } })
+}
+
+let tipped: string | null = null // the session that has had its tip
+function showTip(id: TipId) {
+  const s = getState()
+  if (!s.firsts.setup || s.firsts.hidden || s.firsts[`tip:${id}`] || (s.session && tipped === s.session.id)) return
+  if (s.session) tipped = s.session.id
+  // The control a tip is about comes out of Meeting options onto the capsule.
+  const item = TIPS[id].capsule
+  const grow = item && s.capsule.hidden.includes(item) ? { capsule: { shown: placeOnCapsule(s.capsule.shown, item), hidden: s.capsule.hidden.filter((x) => x !== item) } } : {}
+  patchState({ tip: id, firsts: { [`tip:${id}`]: Date.now() }, ...grow })
+  console.log(`[tips] ${id}`)
+}
+
+function tipAct() {
+  const { tip } = getState()
+  patchState({ tip: null })
+  if (tip === 'smart') patchState({ smart: true })
+  else if (tip === 'glance') patchState({ layout: 'glance', overlayVisible: true })
+  else if (tip === 'files') openSettings('modes')
+  else if (tip === 'more') openSettings()
+}
+
+let asksThisSession = { id: '', n: 0 }
+/** An ask that got an answer (failed and stopped ones don't count). */
+function answered(smart: boolean) {
+  const s = getState()
+  patchState({ lastAnswer: { at: Date.now(), smart, inSession: !!s.session } })
+  first('answer')
+  if (smart) first('smart')
+  if (!s.session || s.session.practice) return
+  asksThisSession = { id: s.session.id, n: asksThisSession.id === s.session.id ? asksThisSession.n + 1 : 1 }
+  if (asksThisSession.n === 3 && !s.smart) showTip('smart')
 }
 
 function showHistory() {
@@ -918,6 +985,7 @@ function trayMenu(s: State) {
   const layout = (l: State['layout']) => () => patchState({ layout: getState().layout === l ? 'full' : l, overlayVisible: true })
   const sep: MenuItemConstructorOptions = { type: 'separator' }
   const showPanel = () => patchState({ overlayVisible: true, chat: { visible: true } })
+  const left = checklistLeft(s.firsts)
 
   const items: MenuItemConstructorOptions[] = [
     // Status lines are enabled so macOS doesn't grey them; clicking one shows the panel.
@@ -937,6 +1005,11 @@ function trayMenu(s: State) {
     toggle('Ghost', s.layout === 'ghost', layout('ghost'), { enabled: inApp, ...key('toggleGhost') }),
     sep,
     { label: 'Session history…', enabled: inApp, click: showHistory },
+    ...(left.length ? [{
+      label: `Getting started · ${CHECKLIST.length - left.length} of ${CHECKLIST.length}`, enabled: inApp,
+      // next tick, as below
+      submenu: [...CHECKLIST.map((c) => toggle(c.label, !left.includes(c), () => void setImmediate(showHistory))), sep, { label: 'Hide this list and tips', click: () => void setImmediate(() => patchState({ firsts: { hidden: Date.now() }, tip: null })) }],
+    }] : []),
     ...(s.update.status === 'available' ? [{ label: `Update to ${s.update.channel === 'beta' ? 'beta ' : ''}${s.update.version}…`, icon: dot(6, BLUE), click: () => openSettings('general') }] : []),
     { label: 'Settings…', enabled: inApp, click: () => openSettings(), ...key('openSettings') },
     sep,
